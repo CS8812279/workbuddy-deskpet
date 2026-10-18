@@ -1,0 +1,8 @@
+# 运行时依赖
+PySide6-Essentials>=6.6
+zstandard>=0.22
+cryptography>=42
+
+# 仅在重新生成立绘 / 安装插件时需要（tools/ 目录）
+# Pillow>=10
+# PyYAML>=6

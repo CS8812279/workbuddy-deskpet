@@ -1,0 +1,22 @@
+# ---- 本地运行产物 ----
+config.json
+data/
+*.log
+
+# ---- 用户自定义素材 ----
+assets/custom/
+
+# ---- 开发过程中的截图 / 中间产物 ----
+assets/preview/
+assets/whale-ref/
+assets/whale-girl/_*.png
+assets/whale-girl/whale-girl-*.png
+
+# ---- 插件安装时生成 ----
+plugin/deskpet.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
