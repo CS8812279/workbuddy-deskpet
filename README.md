@@ -180,7 +180,14 @@ python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
 ```
 
 The bubble background is a white fluffy panel generated with Krea2 (`tools/make_bubble_art.py`,
-then matted with birefnet) and stretched with 9-slice at runtime.
+then matted with birefnet), stretched with 9-slice, with a separate feathered fur-edge layer on top —
+the outline is fuzzy instead of a clean vector cut.
+
+**Font and lines are editable:**
+
+- Font: right click → Settings → 气泡, pick a family and size, saved to `config.json`
+- Lines: tray → 编辑台词… opens `lines.json` in the project root (`happy / shy / angry / surprise / sad / idle`,
+  each a string array). A default file is generated on first run.
 
 `qwen_faces.py` is the recommended path: it only touches the cropped head and pastes it back
 with a feathered edge, so hair, fur and lighting outside the crop are pixel-identical.

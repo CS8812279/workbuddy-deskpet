@@ -11,23 +11,33 @@ from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPixmap,
 from PySide6.QtWidgets import QApplication, QWidget
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "bubble"
-PAD_X = 30          # 留出毛绒边框
-PAD_Y = 20
+PAD_X = 34          # 留出毛绒边框
+PAD_Y = 24
 TAIL = 0            # 毛绒面板没有尖角，气泡直接浮在头顶
 MAX_W = 320
 MIN_W = 172
 TEXT = "#3B3644"    # 白底上的深色字
 
 _FUZZ: QPixmap | None = None
+_EDGE: QPixmap | None = None
 
 
 def _fuzz() -> QPixmap:
-    """毛绒底图（Krea2 生成，tools/make_bubble_art.py）。"""
+    """毛绒纹理（Krea2 生成，tools/make_bubble_art.py）。"""
     global _FUZZ
     if _FUZZ is None:
         p = ASSETS / "fluff.png"
         _FUZZ = QPixmap(str(p)) if p.exists() else QPixmap()
     return _FUZZ
+
+
+def _edge() -> QPixmap:
+    """只保留外圈的绒边，用来做不截断的毛边轮廓。"""
+    global _EDGE
+    if _EDGE is None:
+        p = ASSETS / "fluff_edge.png"
+        _EDGE = QPixmap(str(p)) if p.exists() else QPixmap()
+    return _EDGE
 
 
 class Bubble(QWidget):
@@ -40,6 +50,8 @@ class Bubble(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
 
+        self._family = "Microsoft YaHei UI"
+        self._size = 10
         self._title = ""
         self._text = ""
         self._accent = QColor("#8FE7FF")
@@ -99,6 +111,15 @@ class Bubble(QWidget):
         if seconds and seconds > 0:
             self._timer.start(int(seconds * 1000))
 
+    def set_style(self, family: str, size: int) -> None:
+        """字体可换——字体族与字号都来自 config，用户改了立即生效。"""
+        self._family = family or "Microsoft YaHei UI"
+        self._size = max(7, min(24, int(size)))
+        self._font = QFont(self._family, self._size)
+        self._doc.setDefaultFont(self._font)
+        self._title_font = QFont(self._family, self._size)
+        self._title_font.setBold(True)
+
     def _place(self, anchor: QRect) -> None:
         screen = QApplication.screenAt(anchor.center()) or QApplication.primaryScreen()
         area = screen.availableGeometry()
@@ -134,25 +155,32 @@ class Bubble(QWidget):
         p.setRenderHint(QPainter.SmoothPixmapTransform, True)
         p.fillRect(self.rect(), Qt.transparent)
 
-        body = QRectF(0.8, 0.8, self.width() - 1.6, self.height() - 1.6)
-        radius = min(18.0, body.height() / 2.0)
+        inset = 4.0
+        body = QRectF(inset, inset, self.width() - inset * 2, self.height() - inset * 2)
+        radius = min(16.0, body.height() / 2.0)
 
-        # 1) 实底：保证文字有干净的背景
+        # 1) 白色实底，略微内缩，让外圈留给绒毛
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(252, 251, 252, 246))
+        p.setBrush(QColor(252, 251, 252, 250))
         p.drawRoundedRect(body, radius, radius)
 
-        # 2) 毛绒纹理：压低透明度叠在实底上，只当质感，不抢字
+        # 2) 一圈很淡的纹理，增加棉感（不会盖住文字）
         pm = _fuzz()
         if not pm.isNull():
-            p.setOpacity(0.38)
-            self._draw_nine(p, pm, body)
+            p.setOpacity(0.22)
+            self._draw_nine(p, pm, body, dst=22.0)
             p.setOpacity(1.0)
 
-        # 3) 边缘一圈淡描边，把面板和桌面分开
+        # 3) 带羽化的绒边，盖在轮廓上——这样边缘是毛的，不是一刀切
+        edge = _edge()
+        if not edge.isNull():
+            outer = QRectF(0, 0, self.width(), self.height())
+            self._draw_nine(p, edge, outer, dst=30.0)
+
+        # 4) 极淡描边压住内圈，避免白底和绒边之间有条缝
         p.setBrush(Qt.NoBrush)
-        p.setPen(QColor(210, 206, 216, 170))
-        p.drawRoundedRect(body, radius, radius)
+        p.setPen(QColor(214, 210, 220, 90))
+        p.drawRoundedRect(body.adjusted(1, 1, -1, -1), radius - 1, radius - 1)
 
         y = PAD_Y - 4
         if self._title:
@@ -167,15 +195,15 @@ class Bubble(QWidget):
         self._doc.drawContents(p)
 
     @staticmethod
-    def _draw_nine(p: QPainter, pm: QPixmap, rect: QRectF) -> None:
-        """九宫格：四角保留绒毛细节，边和中间拉伸；目标角固定 22px，不被源图尺寸带偏。"""
+    def _draw_nine(p: QPainter, pm: QPixmap, rect: QRectF, dst: float = 22.0) -> None:
+        """九宫格：四角保留绒毛细节，边和中间拉伸。"""
         sw, sh = pm.width(), pm.height()
         src = min(sw, sh) * 0.30
-        dst = min(22.0, rect.width() / 3.0, rect.height() / 3.0)
+        d = min(dst, rect.width() / 3.0, rect.height() / 3.0)
         sx = (0.0, src, sw - src, float(sw))
         sy = (0.0, src, sh - src, float(sh))
-        dx = (rect.left(), rect.left() + dst, rect.right() - dst, rect.right())
-        dy = (rect.top(), rect.top() + dst, rect.bottom() - dst, rect.bottom())
+        dx = (rect.left(), rect.left() + d, rect.right() - d, rect.right())
+        dy = (rect.top(), rect.top() + d, rect.bottom() - d, rect.bottom())
         for i in range(3):
             for j in range(3):
                 w = dx[i + 1] - dx[i]

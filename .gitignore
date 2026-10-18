@@ -1,5 +1,6 @@
 # ---- 本地运行产物 ----
 config.json
+lines.json
 data/
 *.log
 

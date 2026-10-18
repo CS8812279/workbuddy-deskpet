@@ -5,10 +5,10 @@ import shutil
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QPixmap
-from PySide6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFormLayout, QFrame,
-                               QHBoxLayout, QLabel, QLineEdit, QPushButton,
-                               QSpinBox, QVBoxLayout, QWidget)
+from PySide6.QtGui import QFont, QPixmap
+from PySide6.QtWidgets import (QCheckBox, QDialog, QFileDialog, QFontComboBox,
+                               QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit,
+                               QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
 CUSTOM_DIR = Path(__file__).resolve().parent.parent / "assets" / "custom"
 
@@ -119,6 +119,27 @@ class SettingsDialog(QDialog):
         snd_row.addWidget(b2)
         form.addRow(snd_row)
         root.addWidget(snd)
+
+        # ---- 气泡 ----
+        root.addWidget(_section("气泡"))
+        bub = QFrame()
+        bub.setObjectName("card")
+        form_b = QFormLayout(bub)
+        form_b.setContentsMargins(12, 10, 12, 10)
+        form_b.setSpacing(8)
+        bcfg = self.cfg.get("bubble", {})
+        self.cb_font = QFontComboBox()
+        self.cb_font.setCurrentFont(QFont(bcfg.get("font_family", "Microsoft YaHei UI")))
+        form_b.addRow(QLabel("字体"), self.cb_font)
+        self.sp_fsize = QSpinBox()
+        self.sp_fsize.setRange(8, 18)
+        self.sp_fsize.setValue(int(bcfg.get("font_size", 10)))
+        self.sp_fsize.setSuffix(" pt")
+        form_b.addRow(QLabel("字号"), self.sp_fsize)
+        hint_b = QLabel("台词在项目根目录的 lines.json 里改，托盘菜单可一键打开")
+        hint_b.setStyleSheet("color:#7E8BA8; font-size:11px;")
+        form_b.addRow(hint_b)
+        root.addWidget(bub)
 
         # ---- DeepSeek ----
         root.addWidget(_section("DeepSeek"))
@@ -237,6 +258,9 @@ class SettingsDialog(QDialog):
         self.cfg["alerts"]["approval"] = self.ck_appr.isChecked()
         self.cfg["alerts"]["tray"] = self.ck_tray.isChecked()
         self.cfg["alerts"]["bubble_seconds"] = self.sp_dur.value()
+        self.cfg.setdefault("bubble", {})
+        self.cfg["bubble"]["font_family"] = self.cb_font.currentFont().family()
+        self.cfg["bubble"]["font_size"] = self.sp_fsize.value()
         self.cfg["deepseek"]["api_key"] = self.ed_key.text().strip()
         self.saved.emit(self.cfg)
         self.accept()

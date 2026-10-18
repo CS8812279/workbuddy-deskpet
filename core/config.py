@@ -44,6 +44,10 @@ DEFAULTS: dict = {
         "refresh_seconds": 300,
         "exe": "",
     },
+    "bubble": {
+        "font_family": "Microsoft YaHei UI",
+        "font_size": 10,
+    },
     "autostart": False,
 }
 

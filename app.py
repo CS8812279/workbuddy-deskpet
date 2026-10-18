@@ -10,7 +10,7 @@ from PySide6.QtCore import QObject, QPoint, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from core import config, skins
+from core import config, skins, texts
 from core.log import log
 from core.log import exc as log_exc
 from core.store import Store
@@ -28,14 +28,7 @@ from ui.sprite import load_custom_skin, load_skin
 ROOT = Path(__file__).resolve().parent
 DEDUPE_WINDOW = 45.0  # 同一任务的重复完成提醒合并窗口（秒）
 
-# 摸摸时的随机台词
-PAT_LINES = {
-    "happy": ["嘿嘿…", "好舒服～", "再来一下嘛", "唔…喜欢"],
-    "shy": ["别、别摸了…", "脸要烧起来了", "诶…突然这样"],
-    "angry": ["别戳了！", "再点真要生气了", "哼——"],
-    "surprise": ["哇啊——", "放我下来！"],
-    "sad": ["呜…", "今天有点累"],
-}
+
 
 
 class Poller(QThread):
@@ -104,6 +97,8 @@ class DeskPet(QObject):
         self.pet.context_requested.connect(self._show_menu)
 
         self.bubble = Bubble()
+        self.bubble.set_style(self.cfg.get("bubble", {}).get("font_family", ""),
+                              self.cfg.get("bubble", {}).get("font_size", 10))
         self.panel = Panel()
         self.panel.set_name(self._pet_name())
         self.sound = Player(
@@ -122,6 +117,8 @@ class DeskPet(QObject):
         self._pat_times: list[float] = []
         self._last_line = ""
         self._last_pat_at = 0.0
+        texts.write_example()
+        self.lines = texts.load_lines()
         self._home_pos: QPoint | None = None
         self._alert_centered = False
         self._last_saved_pos = None
@@ -268,6 +265,9 @@ class DeskPet(QObject):
         self.sound.muted = not cfg["alerts"]["sound"] or cfg["pet"]["muted"]
         self.sound.set_custom(cfg["alerts"].get("sound_file", ""))
         self.ds.set_key(cfg["deepseek"].get("api_key", ""))
+        self.bubble.set_style(cfg.get("bubble", {}).get("font_family", ""),
+                              cfg.get("bubble", {}).get("font_size", 10))
+        self.lines = texts.load_lines()
 
         self._reload_skin()
         self.panel.set_name(self._pet_name())
@@ -549,7 +549,7 @@ class DeskPet(QObject):
 
         self.pet.set_mood(mood, 2.6)
         self.sound.play("click")
-        pool = PAT_LINES.get(mood, ["…"])
+        pool = self.lines.get(mood) or ["…"]
         fresh = [l for l in pool if l != self._last_line] or pool
         line = random.choice(fresh)
         self._last_line = line
@@ -599,6 +599,16 @@ class DeskPet(QObject):
         except Exception:
             log_exc("重建采集线程失败")
         self._last_tick_at = time.time()
+
+    def _open_lines_file(self) -> None:
+        """把 lines.json 交给系统默认编辑器，改完下次摸摸就生效。"""
+        import os
+
+        path = texts.write_example()
+        try:
+            os.startfile(str(path))       # noqa: S606 - 只打开自己的文件
+        except Exception:
+            log_exc("打开台词文件失败")
 
     # ---------------- 换肤 ----------------
     def _switch_skin(self, skin_id: str) -> None:
