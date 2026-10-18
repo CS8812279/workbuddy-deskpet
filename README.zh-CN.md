@@ -179,8 +179,9 @@ python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
     --box 822,345,1064,426 --display "雪蛾" --feather 9
 ```
 
-气泡背景是 Krea2 生成的白色毛绒面板（`tools/make_bubble_art.py` 出图 + birefnet 抠图），运行时用九宫格拉伸，
-四角保留绒毛、边缘用单独的羽化绒边层盖住，所以轮廓是毛的而不是一刀切。
+气泡背景就是**抠好背景的毛绒素材本身**（Krea2 出图 + birefnet 抠图，见 `tools/make_bubble_art.py`）：
+整张铺进气泡，轮廓直接用它自己的毛边——不裁圆角、不描边、不切边框。
+为了文字可读，只在中部叠一层径向柔光，用 `CompositionMode_SourceAtop` 合成，光只会落在毛上，四角不会糊出白框。
 
 **字体和台词都能改**：
 

@@ -18,8 +18,8 @@ from tools.make_skin import (  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "assets" / "bubble" / "fluff.png"
 
-PROMPT = ("一个纯白色的毛绒质感圆角矩形面板，四角圆润，边缘蓬松柔软像绒毛，表面是细密的白色绒毛，"
-          "正面平视，居中放置，浅灰色纯色背景，没有文字，没有阴影，没有描边")
+PROMPT = ("一个横向的纯白色毛绒长条面板，横向构图，四角圆润，边缘蓬松柔软像绒毛，轮廓是不规则的绒毛，"
+          "表面是细密的白色短绒，正面平视，居中放置，浅灰色纯色背景，没有文字，没有阴影，没有描边")
 NEG = "文字, 字母, 水印, 黑色边框, 硬边, 金属, 反光, 多个物体, 阴影"
 
 
@@ -32,7 +32,7 @@ def t2i(seed: int) -> dict:
                          "type": "krea2", "device": "default"}},
         "3": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
         "4": {"class_type": "EmptyLatentImage",
-              "inputs": {"width": 1024, "height": 1024, "batch_size": 1}},
+              "inputs": {"width": 1280, "height": 768, "batch_size": 1}},
         "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": PROMPT}},
         "6": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text": NEG}},
         "7": {"class_type": "KSampler", "inputs": {

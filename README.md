@@ -179,9 +179,11 @@ python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
     --box 822,345,1064,426 --display "雪蛾" --feather 9
 ```
 
-The bubble background is a white fluffy panel generated with Krea2 (`tools/make_bubble_art.py`,
-then matted with birefnet), stretched with 9-slice, with a separate feathered fur-edge layer on top —
-the outline is fuzzy instead of a clean vector cut.
+The bubble background **is** the matted fur material (Krea2 render + birefnet matte, see
+`tools/make_bubble_art.py`): the whole image is stretched into the bubble and its own fuzzy outline
+is the border — no rounded-rect crop, no stroke.
+For legibility a radial white wash is composited with `CompositionMode_SourceAtop`, so it only lands on
+the fur and never leaves a white rectangle around the corners.
 
 **Font and lines are editable:**
 

@@ -5,39 +5,32 @@ import math
 
 from pathlib import Path
 
-from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, QRectF, QTimer, Qt
+from PySide6.QtCore import (QPoint, QPointF, QPropertyAnimation, QRect, QRectF,
+                            QTimer, Qt)
 from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPixmap,
-                           QTextCharFormat, QTextCursor, QTextDocument, QTextOption)
+                           QRadialGradient, QTextCharFormat, QTextCursor,
+                           QTextDocument, QTextOption)
 from PySide6.QtWidgets import QApplication, QWidget
 
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "bubble"
-PAD_X = 34          # 留出毛绒边框
-PAD_Y = 24
+PAD_X = 38          # 留出毛绒边框
+PAD_Y = 26
 TAIL = 0            # 毛绒面板没有尖角，气泡直接浮在头顶
 MAX_W = 320
 MIN_W = 172
 TEXT = "#3B3644"    # 白底上的深色字
 
 _FUZZ: QPixmap | None = None
-_EDGE: QPixmap | None = None
-
-
 def _fuzz() -> QPixmap:
-    """毛绒纹理（Krea2 生成，tools/make_bubble_art.py）。"""
+    """白色毛绒面板，已抠图（Krea2 出图 + birefnet 抠图，见 tools/make_bubble_art.py）。
+
+    直接整张铺进气泡，轮廓就是它自己的毛边——不裁圆角、不描边。
+    """
     global _FUZZ
     if _FUZZ is None:
         p = ASSETS / "fluff.png"
         _FUZZ = QPixmap(str(p)) if p.exists() else QPixmap()
     return _FUZZ
-
-
-def _edge() -> QPixmap:
-    """只保留外圈的绒边，用来做不截断的毛边轮廓。"""
-    global _EDGE
-    if _EDGE is None:
-        p = ASSETS / "fluff_edge.png"
-        _EDGE = QPixmap(str(p)) if p.exists() else QPixmap()
-    return _EDGE
 
 
 class Bubble(QWidget):
@@ -155,32 +148,34 @@ class Bubble(QWidget):
         p.setRenderHint(QPainter.SmoothPixmapTransform, True)
         p.fillRect(self.rect(), Qt.transparent)
 
-        inset = 4.0
-        body = QRectF(inset, inset, self.width() - inset * 2, self.height() - inset * 2)
-        radius = min(16.0, body.height() / 2.0)
+        # 先合成到离屏：毛绒素材原样铺满，轮廓就是它自己的毛边
+        buf = QPixmap(self.size())
+        buf.fill(Qt.transparent)
+        bp = QPainter(buf)
+        bp.setRenderHint(QPainter.Antialiasing, True)
+        bp.setRenderHint(QPainter.SmoothPixmapTransform, True)
 
-        # 1) 白色实底，略微内缩，让外圈留给绒毛
-        p.setPen(Qt.NoPen)
-        p.setBrush(QColor(252, 251, 252, 250))
-        p.drawRoundedRect(body, radius, radius)
-
-        # 2) 一圈很淡的纹理，增加棉感（不会盖住文字）
         pm = _fuzz()
-        if not pm.isNull():
-            p.setOpacity(0.22)
-            self._draw_nine(p, pm, body, dst=22.0)
-            p.setOpacity(1.0)
+        if pm.isNull():
+            bp.setPen(Qt.NoPen)
+            bp.setBrush(QColor(250, 250, 252, 250))
+            bp.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 16, 16)
+        else:
+            bp.drawPixmap(QRectF(0, 0, self.width(), self.height()), pm, QRectF(pm.rect()))
 
-        # 3) 带羽化的绒边，盖在轮廓上——这样边缘是毛的，不是一刀切
-        edge = _edge()
-        if not edge.isNull():
-            outer = QRectF(0, 0, self.width(), self.height())
-            self._draw_nine(p, edge, outer, dst=30.0)
+        # 中心柔光只落在毛上（SourceAtop 保留原有 alpha），不会在四角糊出一个白框
+        grad = QRadialGradient(QPointF(self.width() / 2, self.height() / 2),
+                               max(self.width(), self.height()) * 0.62)
+        grad.setColorAt(0.0, QColor(255, 255, 255, 210))
+        grad.setColorAt(0.55, QColor(255, 255, 255, 155))
+        grad.setColorAt(1.0, QColor(255, 255, 255, 0))
+        bp.setCompositionMode(QPainter.CompositionMode_SourceAtop)
+        bp.setPen(Qt.NoPen)
+        bp.setBrush(grad)
+        bp.drawRect(buf.rect())
+        bp.end()
 
-        # 4) 极淡描边压住内圈，避免白底和绒边之间有条缝
-        p.setBrush(Qt.NoBrush)
-        p.setPen(QColor(214, 210, 220, 90))
-        p.drawRoundedRect(body.adjusted(1, 1, -1, -1), radius - 1, radius - 1)
+        p.drawPixmap(0, 0, buf)
 
         y = PAD_Y - 4
         if self._title:
@@ -194,21 +189,3 @@ class Bubble(QWidget):
         p.translate(PAD_X, y)
         self._doc.drawContents(p)
 
-    @staticmethod
-    def _draw_nine(p: QPainter, pm: QPixmap, rect: QRectF, dst: float = 22.0) -> None:
-        """九宫格：四角保留绒毛细节，边和中间拉伸。"""
-        sw, sh = pm.width(), pm.height()
-        src = min(sw, sh) * 0.30
-        d = min(dst, rect.width() / 3.0, rect.height() / 3.0)
-        sx = (0.0, src, sw - src, float(sw))
-        sy = (0.0, src, sh - src, float(sh))
-        dx = (rect.left(), rect.left() + d, rect.right() - d, rect.right())
-        dy = (rect.top(), rect.top() + d, rect.bottom() - d, rect.bottom())
-        for i in range(3):
-            for j in range(3):
-                w = dx[i + 1] - dx[i]
-                h = dy[j + 1] - dy[j]
-                if w <= 0 or h <= 0:
-                    continue
-                p.drawPixmap(QRectF(dx[i], dy[j], w, h),
-                             pm, QRectF(sx[i], sy[j], sx[i + 1] - sx[i], sy[j + 1] - sy[j]))
