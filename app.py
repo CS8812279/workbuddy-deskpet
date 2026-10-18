@@ -9,7 +9,7 @@ from PySide6.QtCore import QObject, QPoint, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from core import config
+from core import config, skins
 from core.log import log
 from core.log import exc as log_exc
 from core.store import Store
@@ -145,7 +145,11 @@ class DeskPet(QObject):
                 if skin:
                     return skin
         if self.cfg["pet"].get("skin", "auto") != "blob":
-            return load_skin(config.ASSETS_DIR / "whale-girl" / "frames")
+            skin_id = self.cfg["pet"].get("skin_id") or skins.DEFAULT_ID
+            skin = load_skin(skins.frames_dir(skin_id))
+            if skin:
+                return skin
+            return load_skin(skins.frames_dir(skins.DEFAULT_ID))
         return None
 
     def _restore_pos(self) -> None:
@@ -249,15 +253,7 @@ class DeskPet(QObject):
         self.sound.set_custom(cfg["alerts"].get("sound_file", ""))
         self.ds.set_key(cfg["deepseek"].get("api_key", ""))
 
-        self.skin = self._build_skin()
-        self.pet.skin = self.skin
-        self.pet._apply_size()
-        self.pet.clamp_to_screen()
-        self.pet.update()
-
-        self._icon_idle = make_icon_from_skin(self.skin, "idle") or make_icon("idle")
-        self._icon_alert = make_icon_from_skin(self.skin, "alert") or make_icon("alert")
-        self.tray.setIcon(self._icon_idle)
+        self._reload_skin()
         self.panel.set_name(self._pet_name())
         self._update_tooltip()
 
@@ -556,6 +552,31 @@ class DeskPet(QObject):
         except Exception:
             log_exc("重建采集线程失败")
         self._last_tick_at = time.time()
+
+    # ---------------- 换肤 ----------------
+    def _switch_skin(self, skin_id: str) -> None:
+        if skin_id == (self.cfg["pet"].get("skin_id") or skins.DEFAULT_ID):
+            return
+        self.cfg["pet"]["skin_id"] = skin_id
+        self.cfg["pet"]["skin_file"] = ""
+        config.save(self.cfg)
+        self._reload_skin()
+        name = next((s["name"] for s in skins.available() if s["id"] == skin_id), skin_id)
+        log(f"切换皮肤 -> {skin_id}")
+        self._show_bubble_once(f"换上 {name} 了", "外观")
+
+    def _show_bubble_once(self, text: str, title: str = "") -> None:
+        self.bubble.show_text(title or "", text, self.pet.geometry(), seconds=3.0)
+
+    def _reload_skin(self) -> None:
+        self.skin = self._build_skin()
+        self.pet.skin = self.skin
+        self.pet._apply_size()
+        self.pet.clamp_to_screen()
+        self.pet.update()
+        self._icon_idle = make_icon_from_skin(self.skin, "idle") or make_icon("idle")
+        self._icon_alert = make_icon_from_skin(self.skin, "alert") or make_icon("alert")
+        self.tray.setIcon(self._icon_idle)
 
     # ---------------- 重启 ----------------
     def _restart_pet(self) -> None:

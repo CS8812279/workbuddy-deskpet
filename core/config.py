@@ -20,6 +20,7 @@ DEFAULTS: dict = {
         "muted": False,
         "name": "墨团",
         "skin": "auto",
+        "skin_id": "whale-girl",
         "skin_file": "",
     },
     "alerts": {

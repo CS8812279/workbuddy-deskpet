@@ -16,6 +16,7 @@ English | [简体中文](README.zh-CN.md)
 | **DeepSeek balance** | Fetches `/user/balance` directly with your own API key — **no DSH plugin required**. Today's spend is derived from balance drops |
 | **Info panel** | Left click: credits, balance, running tasks, DSH sessions, pending approvals, recent history |
 | **Five-state skin** | idle breathing + random blink, working hop, done jump with confetti, alert shake, sleepy |
+| **Multiple characters** | Right click → 角色 to switch; drop a folder under `assets/` to add your own |
 | **Settings** | Right click → Settings: rename, import a PNG, custom WAV, toggle each alert channel, bubble duration |
 | **Plugin mode** | Ships as a DSH plugin: starts with the host, dies with the host |
 
@@ -149,7 +150,11 @@ Quirks worth knowing:
 
 ## Character and skin
 
-The default skin is a derivative of the community character **鲸鱼娘 / whale girl** ([TreapGoGo/deepseek-whale-girl](https://github.com/TreapGoGo/deepseek-whale-girl)), generated locally with ComfyUI + Krea 2.
+Two skins ship in the box: **鲸鱼娘** (`whale-girl`, the default) and **雪蛾** (`moth-girl`, pure-black insect eyes).
+
+![moth states](docs/states-moth.png)
+
+The whale girl skin is a derivative of the community character **鲸鱼娘 / whale girl** ([TreapGoGo/deepseek-whale-girl](https://github.com/TreapGoGo/deepseek-whale-girl)), generated locally with ComfyUI + Krea 2.
 
 ```
 assets/whale-girl/frames/
@@ -160,14 +165,19 @@ Expressions are made with **masked inpainting** (`SetLatentNoiseMask` over the f
 
 To use your own art: right click → Settings → import a PNG (single image for all states), or drop five same-size PNGs into `frames/`.
 
-Regenerating the frames (needs ComfyUI on `127.0.0.1:8188`):
+Adding a new character (needs ComfyUI on `127.0.0.1:8188`):
 
 ```bat
-python tools/make_face_mask.py      :: feathered face mask
-python tools/make_faces_inpaint.py  :: four expressions via local repaint
-python tools/build_skin.py          :: matting + edge cleanup + union crop
-python tools/skin_preview.py        :: six-state contact sheet
+python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
+    --box 822,345,1064,426 --display "雪蛾" --feather 9
 ```
+
+`--box` is the **eye band** (x1,y1,x2,y2), not the whole face. Lessons learned the hard way:
+
+- Masking the entire face lets the model repaint the irises — a pure-black insect eye turns brown in one pass. A narrow eye band keeps the rest pixel-identical.
+- Closed eyes need `denoise 0.85`; open-eye expressions need `≤0.55` or the colour drifts.
+- "Open mouth" prompts on a chibi face produce a black-red hole. Keep lips closed.
+- `alert` reuses the idle frame on purpose: the base face already reads as startled, and the red badge + shake + rings carry the signal.
 
 ## Project layout
 

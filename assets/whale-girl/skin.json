@@ -1,0 +1,11 @@
+{
+  "display": "鲸鱼娘",
+  "frames": [
+    "alert",
+    "blink",
+    "done",
+    "idle",
+    "sleep"
+  ],
+  "height": 900
+}

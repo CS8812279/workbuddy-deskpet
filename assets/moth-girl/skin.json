@@ -1,0 +1,11 @@
+{
+  "display": "雪蛾",
+  "frames": [
+    "alert",
+    "blink",
+    "done",
+    "idle",
+    "sleep"
+  ],
+  "height": 900
+}

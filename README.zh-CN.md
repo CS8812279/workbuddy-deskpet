@@ -16,6 +16,7 @@
 | **DeepSeek 余额** | 用自己的 API Key 直连 `/user/balance`，**不依赖任何 DSH 插件**；今日消耗按余额下降量累计 |
 | **信息面板** | 左键：积分、余额、运行中任务、DSH 会话、待确认、最近记录 |
 | **五态立绘** | 常态呼吸＋随机眨眼、工作时小跳、完成时蹦跳撒彩带、待确认时红脸抖动、困了打盹 |
+| **多角色** | 右键 →「角色」切换；往 `assets/` 里丢一个目录就能加新皮肤 |
 | **设置** | 右键 → 设置：改名、导入 PNG、换提示音 WAV、逐项开关提醒、气泡停留时长 |
 | **插件模式** | 随 DSH 启动、随 DSH 退出，不用手动开 |
 
@@ -149,7 +150,11 @@ python tools/plugin_install.py --status   :: 查看状态
 
 ## 形象与皮肤
 
-默认形象是社区角色**鲸鱼娘**（[TreapGoGo/deepseek-whale-girl](https://github.com/TreapGoGo/deepseek-whale-girl)）的二创，用本地 ComfyUI + Krea 2 生成。
+内置两套：**鲸鱼娘**（`whale-girl`，默认）和 **雪蛾**（`moth-girl`，纯黑复眼）。
+
+![雪蛾五态](docs/states-moth.png)
+
+鲸鱼娘是社区角色**鲸鱼娘**（[TreapGoGo/deepseek-whale-girl](https://github.com/TreapGoGo/deepseek-whale-girl)）的二创，用本地 ComfyUI + Krea 2 生成。
 
 ```
 assets/whale-girl/frames/
@@ -160,14 +165,19 @@ assets/whale-girl/frames/
 
 换自己的形象：右键 → 设置 → 导入 PNG（一张图充当所有状态），或直接把五张同尺寸 PNG 丢进 `frames/`。
 
-重新生成（需要 ComfyUI 跑在 `127.0.0.1:8188`）：
+加一个新角色（需要 ComfyUI 跑在 `127.0.0.1:8188`）：
 
 ```bat
-python tools/make_face_mask.py      :: 生成脸部羽化蒙版
-python tools/make_faces_inpaint.py  :: 局部重绘出四个表情
-python tools/build_skin.py          :: 抠图 + 清边 + union 裁切 + 出帧
-python tools/skin_preview.py        :: 六态对照图自检
+python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
+    --box 822,345,1064,426 --display "雪蛾" --feather 9
 ```
+
+`--box` 是**眼睛窄带**（x1,y1,x2,y2），不是整张脸。这几条是踩坑换来的：
+
+- 蒙版盖整脸，模型会顺手重画虹膜——纯黑复眼一轮就变棕。只盖眼带，其余像素不动。
+- 闭眼要 `denoise 0.85`；睁眼表情必须 `≤0.55`，否则改色。
+- 让模型"张嘴"会画成黑红大洞，一律闭口。
+- `alert` 故意复用常态帧：这张脸本来就够惊讶，红色感叹号＋抖动＋光圈足够表达。
 
 ## 目录
 
