@@ -71,7 +71,11 @@ class DeskPet(QObject):
 
         self.wb = WorkBuddyMonitor(self.store, self.cfg["monitor"]["lookback_minutes"])
         self.dsh = DshMonitor(self.store, self.cfg["monitor"]["lookback_minutes"])
-        self.ds = DeepSeekMonitor(self.cfg["deepseek"]["refresh_seconds"])
+        self.ds = DeepSeekMonitor(
+            self.cfg["deepseek"]["refresh_seconds"],
+            self.cfg["deepseek"].get("api_key", ""),
+            store=self.store,
+        )
         self.credits = WorkBuddyCredits(
             self.cfg["credits"]["refresh_seconds"], self.cfg["credits"].get("exe", ""),
             store=self.store,
@@ -229,6 +233,7 @@ class DeskPet(QObject):
         config.save(cfg)
         self.sound.muted = not cfg["alerts"]["sound"] or cfg["pet"]["muted"]
         self.sound.set_custom(cfg["alerts"].get("sound_file", ""))
+        self.ds.set_key(cfg["deepseek"].get("api_key", ""))
 
         self.skin = self._build_skin()
         self.pet.skin = self.skin
@@ -436,7 +441,8 @@ class DeskPet(QObject):
             parts.append(f"今日 {self.store.credits_today():.0f}")
         ds = self._ds_cache or {}
         if ds.get("ok") and isinstance(ds.get("balance"), (int, float)):
-            parts.append(f"¥{ds['balance']:.2f}")
+            sym = "¥" if ds.get("currency") in (None, "", "CNY") else "$"
+            parts.append(f"{sym}{ds['balance']:.2f}")
         parts.append(f"运行中 {running}")
         if self._pending:
             parts.append(f"待确认 {len(self._pending)}")

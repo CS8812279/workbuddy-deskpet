@@ -53,7 +53,8 @@ PySide6 以 LGPL 方式作为动态链接库使用，本仓库不再分发其二
 |---|---|
 | WorkBuddy 桌面客户端（`%USERPROFILE%\.workbuddy\workbuddy.db`） | 任务状态、请求级积分 |
 | DeepSeek Harness（`%USERPROFILE%\.dsh\sessions`） | 会话事件流（确认请求、回合结束） |
-| DSH 小鲸鱼挂件（`%USERPROFILE%\.dsh\.dshw-usage.json`） | DeepSeek 余额（可选） |
+| `%USERPROFILE%\.dsh\.dshw-usage.json` | DeepSeek 余额（**可选兜底**；主路径是用你自己的 API Key 直连官方接口，不需要任何插件） |
+| `api.deepseek.com/user/balance` | DeepSeek 余额（仅在你配置了 API Key 时调用） |
 | WorkBuddy 本地登录凭据 + `www.codebuddy.cn` 计费接口 | 积分余额（可选） |
 
 计费接口与凭据格式均属**非公开实现**，上游变更可能导致失效。请自行评估账号风险。

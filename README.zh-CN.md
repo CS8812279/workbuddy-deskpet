@@ -13,7 +13,7 @@
 | **任务监控** | 读取 `workbuddy.db` 与会话事件流；会话 `working → completed`、对话回合结束都会提醒 |
 | **等待确认** | 捕获 `approval/asked` 事件 → 桌宠飞到屏幕中央抖动，气泡显示工具名和原因，直到你处理或点她一下 |
 | **积分** | 剩余积分走官方计费接口；今日消耗按服务端余额下降量累计 |
-| **DeepSeek 余额** | 复用 DSH 小鲸鱼挂件账本（`.dshw-usage.json`），零配置 |
+| **DeepSeek 余额** | 用自己的 API Key 直连 `/user/balance`，**不依赖任何 DSH 插件**；今日消耗按余额下降量累计 |
 | **信息面板** | 左键：积分、余额、运行中任务、DSH 会话、待确认、最近记录 |
 | **五态立绘** | 常态呼吸＋随机眨眼、工作时小跳、完成时蹦跳撒彩带、待确认时红脸抖动、困了打盹 |
 | **设置** | 右键 → 设置：改名、导入 PNG、换提示音 WAV、逐项开关提醒、气泡停留时长 |
@@ -35,8 +35,10 @@
 |---|---|
 | WorkBuddy 桌面客户端 | 没有任务列表、拿不到积分 |
 | DSH 会话目录（`~/.dsh/sessions`） | 没有「待确认」提醒，面板里没有 DSH 会话 |
-| 小鲸鱼挂件（`dsh-whale-widget`） | DeepSeek 余额显示「未连接」 |
+| 小鲸鱼挂件（`dsh-whale-widget`） | 什么都不影响——它只是 DeepSeek 余额的可选兜底 |
 | ComfyUI | 只影响重新出图，运行时零依赖 |
+
+DeepSeek 余额**不再依赖任何插件**：右键 → 设置 → DeepSeek 填一次 API Key（或设环境变量 `DEEPSEEK_API_KEY`），桌宠自己直连 `api.deepseek.com`。没配密钥时才回退去读小鲸鱼账本，所以那一行还留着。
 
 ## 快速开始
 
@@ -97,13 +99,14 @@ python tools/plugin_install.py --status   :: 查看状态
   "alerts":   { "complete": true, "approval": true, "sound": true, "tray": true,
                 "center_on_alert": true, "bubble_seconds": 9, "sound_file": "" },
   "monitor":  { "interval_ms": 2000, "lookback_minutes": 30 },
-  "deepseek": { "refresh_seconds": 60 },
+  "deepseek": { "refresh_seconds": 60, "api_key": "" },
   "credits":  { "refresh_seconds": 300, "exe": "" },
   "autostart": false
 }
 ```
 
 - `pet.skin`：`auto` 用 `assets/whale-girl/frames/`，`blob` 回落到程序绘制的团子。
+- `deepseek.api_key`：`sk-…`。留空则退到环境变量 `DEEPSEEK_API_KEY`，再退到小鲸鱼账本。
 - `credits.exe`：留空自动探测 `WorkBuddy.exe`（`%LOCALAPPDATA%\Programs\WorkBuddy` → 卸载注册表）。
 - 大小 / 静音 / 置顶 / 位置也能从托盘和右键菜单改，改完立即存盘。
 
@@ -115,8 +118,20 @@ python tools/plugin_install.py --status   :: 查看状态
 |---|---|
 | `%USERPROFILE%\.workbuddy\workbuddy.db` | `sessions`（状态、标题、目录）、`session_usage`（请求级积分），只读 + WAL |
 | `%USERPROFILE%\.dsh\sessions\**\session.v4.jsonl.zstd` | zstd 多帧 JSONL，按字节偏移增量读：`approval/asked`、`approval/decided`、`turn/end`、`session/title` |
-| `%USERPROFILE%\.dsh\.dshw-usage.json` | 小鲸鱼挂件账本（余额、今日） |
+| `%USERPROFILE%\.dsh\.dshw-usage.json` | 小鲸鱼挂件账本——DeepSeek 余额的**可选兜底** |
+| `api.deepseek.com/user/balance` | DeepSeek 余额，用你自己的 API Key 调 |
 | `%LOCALAPPDATA%\CodeBuddyExtension\...\workbuddy-desktop.info` + `www.codebuddy.cn` | 剩余积分 |
+
+### DeepSeek 余额是怎么取的
+
+取数据的顺序，命中即止：
+
+1. 设置里的 API Key（`deepseek.api_key`）
+2. 环境变量 `DEEPSEEK_API_KEY`
+3. `~/.dsh/.credentials.yaml` 的 `refs.DEEPSEEK_API_KEY`（仅当它长得像 `sk-…`；DSH 平时存的是内部句柄）
+4. 小鲸鱼账本 `.dshw-usage.json`（老兜底，不必须）
+
+今日消耗按两次轮询之间 `total_balance` 的下降量累计，充值不冲抵已用；当天第一次轮询时会用挂件账本里的历史补一个基线，所以升级后不会从 0 开始算。
 
 ### 积分余额是怎么取的
 

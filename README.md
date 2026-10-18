@@ -13,7 +13,7 @@ English | [简体中文](README.zh-CN.md)
 | **Task watch** | Reads `workbuddy.db` and DSH session event streams. Session `working → completed` and turn-end both raise a notification |
 | **Approval alerts** | Catches `approval/asked` events → pet flies to the centre of the screen, shakes, shows the tool name and the reason. Stays until you handle it or click the pet |
 | **Credits** | Remaining credits from the official billing endpoint, plus today's spend measured as the drop in the server-side balance |
-| **DeepSeek balance** | Reuses the DSH whale-widget ledger (`.dshw-usage.json`), zero config |
+| **DeepSeek balance** | Fetches `/user/balance` directly with your own API key — **no DSH plugin required**. Today's spend is derived from balance drops |
 | **Info panel** | Left click: credits, balance, running tasks, DSH sessions, pending approvals, recent history |
 | **Five-state skin** | idle breathing + random blink, working hop, done jump with confetti, alert shake, sleepy |
 | **Settings** | Right click → Settings: rename, import a PNG, custom WAV, toggle each alert channel, bubble duration |
@@ -35,8 +35,10 @@ Optional, each one degrades gracefully:
 |---|---|
 | WorkBuddy desktop app | No task list / no credits |
 | DSH session folder (`~/.dsh/sessions`) | No approval alerts, no DSH section in the panel |
-| Whale widget (`dsh-whale-widget`) | DeepSeek balance shows "not connected" |
+| Whale widget (`dsh-whale-widget`) | Nothing — it is only an optional fallback for the DeepSeek balance |
 | ComfyUI | Only affects regenerating art, zero runtime dependency |
+
+DeepSeek balance does **not** depend on any plugin. Set the API key once (right click → Settings → DeepSeek, or the `DEEPSEEK_API_KEY` environment variable) and the pet talks to `api.deepseek.com` itself. If no key is configured, it degrades to reading the whale-widget ledger — which is why that row is still listed.
 
 ## Quick start
 
@@ -97,13 +99,14 @@ Lifecycle:
   "alerts":   { "complete": true, "approval": true, "sound": true, "tray": true,
                 "center_on_alert": true, "bubble_seconds": 9, "sound_file": "" },
   "monitor":  { "interval_ms": 2000, "lookback_minutes": 30 },
-  "deepseek": { "refresh_seconds": 60 },
+  "deepseek": { "refresh_seconds": 60, "api_key": "" },
   "credits":  { "refresh_seconds": 300, "exe": "" },
   "autostart": false
 }
 ```
 
 - `pet.skin`: `auto` uses `assets/whale-girl/frames/`, `blob` falls back to the procedural blob.
+- `deepseek.api_key`: `sk-…`. Leave empty to fall back to the `DEEPSEEK_API_KEY` environment variable, then to the whale-widget ledger.
 - `credits.exe`: leave empty to auto-detect `WorkBuddy.exe` (`%LOCALAPPDATA%\Programs\WorkBuddy` → uninstall registry).
 - Size / mute / always-on-top / position are also editable from the tray and right-click menu and are saved immediately.
 
@@ -115,7 +118,19 @@ Everything is read locally, nothing is uploaded.
 |---|---|
 | `%USERPROFILE%\.workbuddy\workbuddy.db` | `sessions` (status, title, cwd), `session_usage` (per-request credits) — opened read-only with WAL |
 | `%USERPROFILE%\.dsh\sessions\**\session.v4.jsonl.zstd` | zstd multi-frame JSONL, read incrementally by byte offset: `approval/asked`, `approval/decided`, `turn/end`, `session/title` |
-| `%USERPROFILE%\.dsh\.dshw-usage.json` | whale-widget ledger (balance, today) |
+| `%USERPROFILE%\.dsh\.dshw-usage.json` | Whale-widget ledger — **optional fallback** for the DeepSeek balance |
+| `api.deepseek.com/user/balance` | DeepSeek balance, called with your own API key |
+
+### DeepSeek balance
+
+Provider chain, first hit wins:
+
+1. API key from Settings (`deepseek.api_key`)
+2. `DEEPSEEK_API_KEY` environment variable
+3. `~/.dsh/.credentials.yaml` → `refs.DEEPSEEK_API_KEY` (only if it looks like `sk-…`; DSH usually stores an internal handle there)
+4. Whale-widget ledger `.dshw-usage.json` (legacy fallback, not required)
+
+Today's spend is accumulated from the drop in `total_balance` between polls — a top-up never cancels what you already burned. On the first poll of a day the baseline is seeded from the widget ledger's history when available, so the number does not restart from zero after an upgrade.
 | `%LOCALAPPDATA%\CodeBuddyExtension\...\workbuddy-desktop.info` + `www.codebuddy.cn` | remaining credits |
 
 ### How the credit balance is obtained

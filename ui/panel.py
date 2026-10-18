@@ -184,14 +184,17 @@ class Panel(QWidget):
         ds = st.get("deepseek") or {}
         if ds.get("ok"):
             bal = ds.get("balance")
-            self.kpi_ds._val.setText(f"¥{bal:.2f}" if isinstance(bal, (int, float)) else "--")
+            sym = "¥" if ds.get("currency") in (None, "", "CNY") else "$"
+            self.kpi_ds._val.setText(f"{sym}{bal:.2f}" if isinstance(bal, (int, float)) else "--")
             today = ds.get("today")
             self.kpi_ds._sub.setText(
-                f"今日 ¥{today:.2f}" if isinstance(today, (int, float)) else "今日 --"
+                f"今日 {sym}{today:.2f}" if isinstance(today, (int, float)) else "今日 --"
             )
+            self.kpi_ds.setToolTip(f"数据来源：{ds.get('source') or '未知'}")
         else:
             self.kpi_ds._val.setText("--")
             self.kpi_ds._sub.setText(ds.get("error", "未连接")[:18])
+            self.kpi_ds.setToolTip(ds.get("error") or "")
 
         self.spark.set_values(st.get("credits_week") or [])
 

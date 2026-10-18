@@ -120,6 +120,22 @@ class SettingsDialog(QDialog):
         form.addRow(snd_row)
         root.addWidget(snd)
 
+        # ---- DeepSeek ----
+        root.addWidget(_section("DeepSeek"))
+        ds_card = QFrame()
+        ds_card.setObjectName("card")
+        form3 = QFormLayout(ds_card)
+        form3.setContentsMargins(12, 10, 12, 10)
+        form3.setSpacing(8)
+        self.ed_key = QLineEdit(self.cfg["deepseek"].get("api_key", ""))
+        self.ed_key.setEchoMode(QLineEdit.Password)
+        self.ed_key.setPlaceholderText("sk-…  留空则读环境变量 / 小鲸鱼账本")
+        form3.addRow(QLabel("API Key"), self.ed_key)
+        hint = QLabel("填了直连官方余额接口，不再依赖小鲸鱼挂件")
+        hint.setStyleSheet("color:#7E8BA8; font-size:11px;")
+        form3.addRow(hint)
+        root.addWidget(ds_card)
+
         # ---- 弹窗 ----
         root.addWidget(_section("提醒"))
         alert = QFrame()
@@ -221,5 +237,6 @@ class SettingsDialog(QDialog):
         self.cfg["alerts"]["approval"] = self.ck_appr.isChecked()
         self.cfg["alerts"]["tray"] = self.ck_tray.isChecked()
         self.cfg["alerts"]["bubble_seconds"] = self.sp_dur.value()
+        self.cfg["deepseek"]["api_key"] = self.ed_key.text().strip()
         self.saved.emit(self.cfg)
         self.accept()

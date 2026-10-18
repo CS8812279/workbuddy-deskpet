@@ -146,11 +146,65 @@ def test_workbuddy(tmp: Path) -> None:
           f"{store.credits_today()}")
 
 
+def test_deepseek(tmp: Path) -> None:
+    """余额接口解析 + 今日消耗按快照下降量累计（不依赖任何挂件）。"""
+    print("\n[deepseek]")
+    import io
+    import os
+    from unittest import mock
+
+    from monitor import deepseek as ds_mod
+
+    store = Store(tmp / "ledger_ds.json")
+    mon = ds_mod.DeepSeekMonitor(1, "sk-test-key", store=store,
+                                 ledger_path=tmp / "no-ledger.json")
+
+    payload = json.dumps({
+        "is_available": True,
+        "balance_infos": [{"currency": "CNY", "total_balance": "120.50",
+                           "granted_balance": "0.00", "topped_up_balance": "120.50"}],
+    }).encode()
+
+    class FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    with mock.patch.object(ds_mod.urllib.request, "urlopen", return_value=FakeResp(payload)):
+        r1 = mon.poll(force=True)
+    check(r1["ok"] and abs(r1["balance"] - 120.50) < 1e-6, "解析官方余额", str(r1))
+    check(r1["currency"] == "CNY", "识别币种")
+    check(r1["today"] == 0.0, "首次轮询不产生消耗", str(r1["today"]))
+
+    payload2 = json.dumps({"is_available": True, "balance_infos": [
+        {"currency": "CNY", "total_balance": "118.00"}]}).encode()
+    with mock.patch.object(ds_mod.urllib.request, "urlopen", return_value=FakeResp(payload2)):
+        r2 = mon.poll(force=True)
+    check(abs(r2["today"] - 2.50) < 1e-6, "下降量记为今日消耗", str(r2["today"]))
+
+    payload3 = json.dumps({"is_available": True, "balance_infos": [
+        {"currency": "CNY", "total_balance": "168.00"}]}).encode()
+    with mock.patch.object(ds_mod.urllib.request, "urlopen", return_value=FakeResp(payload3)):
+        r3 = mon.poll(force=True)
+    check(abs(r3["today"] - 2.50) < 1e-6, "充值不冲抵已用", str(r3["today"]))
+
+    # key 优先级：构造函数 > 环境变量
+    os.environ["DEEPSEEK_API_KEY"] = "sk-from-env"
+    check(ds_mod.DeepSeekMonitor(1, "", store=store)._resolve_key() == "sk-from-env",
+          "环境变量兜底")
+    check(ds_mod.DeepSeekMonitor(1, "sk-from-config")._resolve_key() == "sk-from-config",
+          "配置优先于环境变量")
+    os.environ.pop("DEEPSEEK_API_KEY", None)
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td)
         test_dsh_incremental(tmp)
         test_workbuddy(tmp)
+        test_deepseek(tmp)
     print("\n结果：", "全部通过" if not FAILS else f"{len(FAILS)} 项失败 -> {FAILS}")
     return 1 if FAILS else 0
 
