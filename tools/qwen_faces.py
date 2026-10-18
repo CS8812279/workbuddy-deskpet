@@ -38,6 +38,14 @@ PROMPTS = {
             "除眉眼与嘴角以外，五官、发丝、肤色、光照和构图中其它内容保持完全不变。",
     "sleep": "图片是同一人物的面部特写。人物的双眼闭合，眼睑放松下垂，神情困倦柔和。"
              "除眼睑以外，五官、发丝、肤色、光照和构图中其它内容保持完全不变。",
+    "happy": "图片是同一人物的面部特写。人物的双眼弯成月牙形的笑眼并闭合，嘴角大幅上扬，张口露出笑容。"
+             "除眉眼与嘴部以外，五官、发丝、肤色、光照和构图中其它内容保持完全不变。",
+    "shy": "图片是同一人物的面部特写。人物的脸颊泛起红晕，视线微微向下躲闪，嘴角小幅上扬露出腼腆的笑。"
+           "除眉眼、脸颊与嘴角以外，五官、发丝、光照和构图中其它内容保持完全不变。",
+    "angry": "图片是同一人物的面部特写。人物的眉头皱起并向下压，双眼保持睁开直视前方，嘴巴抿成一条直线，"
+             "脸颊与额头保持明亮，没有阴影。除眉眼与嘴部以外，五官、发丝、肤色、光照和构图中其它内容保持完全不变。",
+    "sad": "图片是同一人物的面部特写。人物的双眼保持睁开，视线向下显得失落，眉毛内侧微微上扬，嘴角向下。"
+           "除眉眼与嘴部以外，五官、发丝、肤色、光照和构图中其它内容保持完全不变。",
 }
 
 
@@ -71,6 +79,7 @@ def main() -> int:
     ap.add_argument("--feather", type=int, default=28)
     ap.add_argument("--steps", type=int, default=20)
     ap.add_argument("--only", default="", help="只跑某个状态，调试用")
+    ap.add_argument("--assemble-only", action="store_true", help="不重画，只用现有中间图重新出帧")
     args = ap.parse_args()
 
     base = Image.open(args.image).convert("RGB")
@@ -79,6 +88,15 @@ def main() -> int:
 
     tmp = ROOT / "data" / "skin-build"
     tmp.mkdir(parents=True, exist_ok=True)
+
+    if args.assemble_only:
+        results = {"idle": base}
+        for state in PROMPTS:
+            f = tmp / f"{args.name}-{state}.png"
+            if f.exists():
+                results[state] = Image.open(f).convert("RGB")
+        print(f"[assemble] {len(results)} 帧")
+        return _assemble(args.name, results)
 
     states = [args.only] if args.only else list(PROMPTS)
     results: dict[str, Image.Image] = {"idle": base}
@@ -114,17 +132,22 @@ def main() -> int:
     if args.only:
         return 0
 
+    return _assemble(args.name, results)
+
+
+def _assemble(name: str, results: dict[str, Image.Image]) -> int:
+    tmp = ROOT / "data" / "skin-build"
     print("[cut] 抠图对齐 …", flush=True)
     cut_ids = {}
     for state, im in results.items():
-        p = tmp / f"{args.name}-q-{state}.png"
+        p = tmp / f"{name}-q-{state}.png"
         im.save(p)
-        cut_ids[state] = submit(cut_graph(upload(p, f"{args.name}-q-{state}.png"),
-                                          f"{args.name}-qcut-{state}"))
+        cut_ids[state] = submit(cut_graph(upload(p, f"{name}-q-{state}.png"),
+                                          f"{name}-qcut-{state}"))
     cut_img = {}
     for state, pid in cut_ids.items():
         wait(pid)
-        raw = tmp / f"{args.name}-qcut-{state}.png"
+        raw = tmp / f"{name}-qcut-{state}.png"
         raw.write_bytes(fetch_output(pid))
         cut_img[state] = clean_alpha(Image.open(raw))
 
@@ -132,7 +155,7 @@ def main() -> int:
     box_all = (min(b[0] for b in boxes), min(b[1] for b in boxes),
                max(b[2] for b in boxes), max(b[3] for b in boxes))
     scale = TARGET_H / (box_all[3] - box_all[1])
-    outdir = ROOT / "assets" / args.name / "frames"
+    outdir = ROOT / "assets" / name / "frames"
     outdir.mkdir(parents=True, exist_ok=True)
     for state, im in cut_img.items():
         c = im.crop(box_all)

@@ -12,7 +12,10 @@ from pathlib import Path
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 
-FRAMES = ("idle", "blink", "alert", "done", "sleep")
+FRAMES = ("idle", "blink", "alert", "done", "sleep",
+          "happy", "shy", "angry", "sad")
+# 情绪名 -> 立绘帧名（没有专属帧的情绪复用别的帧）
+MOOD_FRAME = {"surprise": "alert"}
 MAX_H = 300          # scale=1.0 时角色本身的高度
 HEADROOM = 0.14      # 窗口顶部预留，供弹跳/上浮使用，避免头被裁
 
@@ -32,6 +35,15 @@ class SpriteSkin:
             return
         base = self.frames["idle"]
         self.aspect = base.width() / max(1, base.height())
+        self.wings = False
+        meta = root.parent / "skin.json"
+        if meta.exists():
+            try:
+                import json
+
+                self.wings = bool(json.loads(meta.read_text(encoding="utf-8")).get("wings"))
+            except Exception:
+                self.wings = False
 
     def __bool__(self) -> bool:
         return bool(self.frames)
@@ -47,10 +59,13 @@ class SpriteSkin:
              confetti: list | None = None,
              mood: str | None = None, mood_alpha: float = 0.0) -> None:
         frame = "idle"
-        if state == "done":
-            frame = "done"
-        elif state == "alert":
+        mood_frame = MOOD_FRAME.get(mood or "", mood or "")
+        if state == "alert":
             frame = "alert"
+        elif mood_frame and mood_frame in self.frames:
+            frame = mood_frame
+        elif state == "done":
+            frame = "done"
         elif state == "sleep":
             frame = "sleep"
         elif blink < 0.5:
@@ -60,9 +75,17 @@ class SpriteSkin:
         breathe = 1.0 + 0.014 * math.sin(t * 2.1)
         bob = 0.0
         sway = 0.0
+        wing_amp, wing_speed = 0.0, 1.0
+        if self.wings:
+            if state == "working":
+                wing_amp, wing_speed = 4.2, 3.6     # 干活时翅膀轻轻扇
+            elif state == "sleep":
+                wing_amp, wing_speed = 1.0, 0.7
+            else:
+                wing_amp, wing_speed = 1.6, 1.3
         if state == "working":
-            bob = -abs(math.sin(t * 6.2)) * 4.0
-            sway = math.sin(t * 4.6) * 0.5
+            bob = -abs(math.sin(t * 6.2)) * 5.5
+            sway = math.sin(t * 4.6) * 0.9
         elif state == "sleep":
             breathe = 1.0 + 0.02 * math.sin(t * 1.1)
         elif state == "done":
@@ -90,94 +113,39 @@ class SpriteSkin:
         p.rotate(sway)
         p.scale(1.0, breathe)
         p.translate(-w / 2, -h)
-        p.drawPixmap(QRectF(0, body_top, w, body_h), pm, QRectF(pm.rect()))
+        if self.wings and wing_amp > 0:
+            self._draw_winged(p, pm, w, body_h, body_top, t, wing_amp, wing_speed)
+        else:
+            p.drawPixmap(QRectF(0, body_top, w, body_h), pm, QRectF(pm.rect()))
         p.restore()
 
         if alert > 0:
             self._draw_alert_badge(p, w, h, alert)
         if confetti:
             self._draw_confetti(p, w, h, confetti)
-        if state == "working":
-            self._draw_sparks(p, w, h, t)
-            self._draw_thinking(p, w, h, t)
         if state == "sleep":
             self._draw_zzz(p, w, h, t)
-        if mood and mood_alpha > 0.01:
-            self._draw_mood(p, w, h, mood, t, mood_alpha)
+
+    def _draw_winged(self, p: QPainter, pm: QPixmap, w: int, body_h: float,
+                     body_top: float, t: float, amp: float, speed: float) -> None:
+        """把立绘切成竖条，两侧按正弦上下错位——翅膀就活了，身体中线不动。
+
+        每条目标高度多给 2*|dy|，源矩形多给半像素，保证没有缝。
+        """
+        strips = 28
+        src_w = pm.width() / strips
+        for i in range(strips):
+            x0 = w * i / strips
+            x1 = w * (i + 1) / strips
+            k = abs((i + 0.5) / strips - 0.5) * 2.0     # 0=中线，1=最外侧
+            dy = math.sin(t * speed - k * 2.4) * amp * (k ** 1.7)
+            pad = abs(dy)
+            p.drawPixmap(
+                QRectF(x0, body_top + dy - pad, x1 - x0, body_h + pad * 2),
+                pm, QRectF(i * src_w, 0, src_w + 0.6, pm.height()),
+            )
 
     # ---------------- 情绪 ----------------
-    def _draw_mood(self, p: QPainter, w: int, h: int, mood: str, t: float,
-                   alpha: float) -> None:
-        """互动产生的情绪符号：画在角色周围，全部夹在窗口内。"""
-        p.save()
-        p.setRenderHint(QPainter.Antialiasing, True)
-        body_h = h / (1.0 + HEADROOM)
-        top = h - body_h
-        hx = w / 2
-        hy = top + body_h * 0.17
-        a = max(0, min(255, int(255 * alpha)))
-        unit = max(1.0, min(w, body_h) / 150.0)
-
-        if mood == "angry":
-            # 井字怒气符号
-            cx, cy = hx + w * 0.27, hy - body_h * 0.04
-            r = 7.0 * unit
-            p.setPen(QPen(QColor(238, 62, 56, a), max(2.0, 2.4 * unit),
-                          Qt.SolidLine, Qt.RoundCap))
-            p.drawLine(QPointF(cx - r, cy - r * 0.5), QPointF(cx - r * 0.4, cy - r))
-            p.drawLine(QPointF(cx + r, cy - r * 0.5), QPointF(cx + r * 0.4, cy - r))
-            p.drawLine(QPointF(cx - r, cy + r * 0.5), QPointF(cx - r * 0.4, cy + r))
-            p.drawLine(QPointF(cx + r, cy + r * 0.5), QPointF(cx + r * 0.4, cy + r))
-            p.setBrush(QColor(255, 96, 96, int(24 * alpha)))
-            p.setPen(Qt.NoPen)
-            p.drawEllipse(QPointF(hx, hy + body_h * 0.05), w * 0.17, body_h * 0.09)
-
-        elif mood == "shy":
-            p.setBrush(QColor(255, 128, 158, int(62 * alpha)))
-            p.setPen(Qt.NoPen)
-            for ox in (-0.105, 0.105):
-                p.drawEllipse(QPointF(hx + w * ox, hy + body_h * 0.10),
-                              w * 0.045, body_h * 0.016)
-            f = p.font()
-            f.setPointSizeF(max(9.0, 15.0 * unit))
-            p.setFont(f)
-            for i, (ox, oy) in enumerate(((-0.32, -0.10), (0.33, -0.16))):
-                yy = hy + body_h * oy - math.sin(t * 3.2 + i * 1.7) * 3
-                p.setPen(QColor(255, 128, 160, a))
-                p.drawText(QRectF(hx + w * ox - 14, yy - 14, 28, 28),
-                           Qt.AlignCenter, "♥")
-
-        elif mood == "sad":
-            # 泪滴挂在左眼下
-            p.setBrush(QColor(120, 190, 255, a))
-            p.setPen(Qt.NoPen)
-            drop = 10.0 * unit
-            x = hx - w * 0.14
-            y = hy + body_h * 0.10 + abs(math.sin(t * 2.0)) * 2
-            p.drawEllipse(QPointF(x, y), drop * 0.45, drop * 0.62)
-            p.drawEllipse(QPointF(x, y - drop * 0.42), drop * 0.22, drop * 0.30)
-
-        elif mood == "surprise":
-            f = p.font()
-            f.setPointSizeF(max(10.0, 17.0 * unit))
-            f.setBold(True)
-            p.setFont(f)
-            p.setPen(QColor(255, 214, 90, a))
-            for ox in (-0.26, 0.26):
-                p.drawText(QRectF(hx + w * ox - 14, hy - body_h * 0.20, 28, 30),
-                           Qt.AlignCenter, "!")
-
-        elif mood == "happy":
-            f = p.font()
-            f.setPointSizeF(max(9.0, 14.0 * unit))
-            p.setFont(f)
-            p.setPen(QColor(255, 216, 96, a))
-            for i, (ox, oy) in enumerate(((-0.30, -0.06), (0.31, -0.13))):
-                yy = hy + body_h * oy - math.sin(t * 2.6 + i * 2.0) * 2
-                p.drawText(QRectF(hx + w * ox - 14, yy - 14, 28, 28),
-                           Qt.AlignCenter, "★")
-        p.restore()
-
     # ---------------- 特效 ----------------
     def _draw_alert_rings(self, p: QPainter, w: int, h: int, t: float, k: float) -> None:
         p.save()
@@ -223,46 +191,8 @@ class SpriteSkin:
             p.restore()
         p.restore()
 
-    def _draw_thinking(self, p: QPainter, w: int, h: int, t: float) -> None:
-        """头顶三个跳动的点：贴着角色，永远不越出窗口（否则贴屏幕边会被切掉）。"""
-        p.save()
-        p.setRenderHint(QPainter.Antialiasing, True)
-        p.setPen(Qt.NoPen)
-        body_h = h / (1.0 + HEADROOM)
-        r = max(1.8, min(4.6, w * 0.020))
-        gap = r * 2.6
-        base_y = h - body_h + r * 1.6          # 刚好压在发顶
-        for i in range(3):
-            phase = (t * 2.2 - i * 0.28) % 1.0
-            lift = -math.sin(phase * math.pi * 2) * r * 1.1
-            alpha = 120 + int(90 * (0.5 + 0.5 * math.sin(phase * math.pi * 2)))
-            px = w / 2 + (i - 1) * gap
-            py = base_y + lift
-            px, py = self._clamp(px, py, w, h, r + 1)
-            p.setBrush(QColor(150, 200, 255, min(240, alpha)))
-            p.drawEllipse(QPointF(px, py), r, r)
-        p.restore()
-
-    @staticmethod
     def _clamp(px: float, py: float, w: int, h: int, margin: float) -> tuple[float, float]:
         return (min(max(px, margin), w - margin), min(max(py, margin), h - margin))
-
-    def _draw_sparks(self, p: QPainter, w: int, h: int, t: float) -> None:
-        """绕身体转的小光点，半径按窗口短边算，避免飞出画面。"""
-        p.save()
-        p.setRenderHint(QPainter.Antialiasing, True)
-        radius = min(w, h) * 0.30
-        for i in range(3):
-            k = (t * 1.5 + i / 3.0) % 1.0
-            ang = -math.pi * 0.9 + k * math.pi * 1.6
-            px = w / 2 + math.cos(ang) * radius
-            py = h * 0.46 + math.sin(ang) * radius * 0.85
-            r = max(1.4, min(3.0, w * 0.012))
-            px, py = self._clamp(px, py, w, h, r + 1)
-            p.setPen(Qt.NoPen)
-            p.setBrush(QColor(255, 236, 150, int(200 * (1 - k))))
-            p.drawEllipse(QPointF(px, py), r, r)
-        p.restore()
 
     def _draw_zzz(self, p: QPainter, w: int, h: int, t: float) -> None:
         p.save()
