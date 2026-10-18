@@ -26,7 +26,7 @@ def log(msg: str, key: str = "", dedup_seconds: float = 0.0) -> None:
         if LOG.exists() and LOG.stat().st_size > MAX_BYTES:
             LOG.write_text("", encoding="utf-8")
         stamp = time.strftime("%m-%d %H:%M:%S")
-        with open(LOG, "a", encoding="utf-8") as fh:
+        with open(LOG, "a", encoding="utf-8-sig") as fh:
             fh.write(f"{stamp} {msg}\n")
     except Exception:
         pass

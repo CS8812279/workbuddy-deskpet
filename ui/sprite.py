@@ -148,31 +148,43 @@ class SpriteSkin:
         p.restore()
 
     def _draw_thinking(self, p: QPainter, w: int, h: int, t: float) -> None:
-        """头顶三个跳动的点：让“正在跑”一眼可见，静态截屏也能看出来。"""
+        """头顶三个跳动的点：贴着角色，永远不越出窗口（否则贴屏幕边会被切掉）。"""
         p.save()
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setPen(Qt.NoPen)
-        cy = h * 0.085
-        r = max(2.2, w * 0.028)
+        body_h = h / (1.0 + HEADROOM)
+        r = max(1.8, min(4.6, w * 0.020))
+        gap = r * 2.6
+        base_y = h - body_h + r * 1.6          # 刚好压在发顶
         for i in range(3):
             phase = (t * 2.2 - i * 0.28) % 1.0
-            lift = -math.sin(phase * math.pi * 2) * r * 1.2
-            alpha = 130 + int(110 * (0.5 + 0.5 * math.sin(phase * math.pi * 2)))
-            p.setBrush(QColor(150, 200, 255, min(255, alpha)))
-            p.drawEllipse(QPointF(w / 2 + (i - 1) * r * 3.0, cy + lift), r, r)
+            lift = -math.sin(phase * math.pi * 2) * r * 1.1
+            alpha = 120 + int(90 * (0.5 + 0.5 * math.sin(phase * math.pi * 2)))
+            px = w / 2 + (i - 1) * gap
+            py = base_y + lift
+            px, py = self._clamp(px, py, w, h, r + 1)
+            p.setBrush(QColor(150, 200, 255, min(240, alpha)))
+            p.drawEllipse(QPointF(px, py), r, r)
         p.restore()
 
+    @staticmethod
+    def _clamp(px: float, py: float, w: int, h: int, margin: float) -> tuple[float, float]:
+        return (min(max(px, margin), w - margin), min(max(py, margin), h - margin))
+
     def _draw_sparks(self, p: QPainter, w: int, h: int, t: float) -> None:
+        """绕身体转的小光点，半径按窗口短边算，避免飞出画面。"""
         p.save()
         p.setRenderHint(QPainter.Antialiasing, True)
+        radius = min(w, h) * 0.30
         for i in range(3):
             k = (t * 1.5 + i / 3.0) % 1.0
-            ang = -math.pi / 2 + k * math.pi * 1.1 - 0.55
-            px = w / 2 + math.cos(ang) * w * 0.62
-            py = h * 0.52 + math.sin(ang) * h * 0.28
+            ang = -math.pi * 0.9 + k * math.pi * 1.6
+            px = w / 2 + math.cos(ang) * radius
+            py = h * 0.46 + math.sin(ang) * radius * 0.85
+            r = max(1.4, min(3.0, w * 0.012))
+            px, py = self._clamp(px, py, w, h, r + 1)
             p.setPen(Qt.NoPen)
-            p.setBrush(QColor(255, 236, 150, int(210 * (1 - k))))
-            r = max(1.6, w * 0.014)
+            p.setBrush(QColor(255, 236, 150, int(200 * (1 - k))))
             p.drawEllipse(QPointF(px, py), r, r)
         p.restore()
 
