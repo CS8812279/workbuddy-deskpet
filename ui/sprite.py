@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap, QTransform
 
 FRAMES = ("idle", "blink", "alert", "done", "sleep",
           "happy", "shy", "angry", "sad")
@@ -114,7 +114,7 @@ class SpriteSkin:
         p.scale(1.0, breathe)
         p.translate(-w / 2, -h)
         if self.wings and wing_amp > 0:
-            self._draw_winged(p, pm, w, body_h, body_top, t, wing_amp, wing_speed)
+            self._draw_winged(p, pm, w, h, body_h, body_top, t, wing_amp, wing_speed)
         else:
             p.drawPixmap(QRectF(0, body_top, w, body_h), pm, QRectF(pm.rect()))
         p.restore()
@@ -126,24 +126,26 @@ class SpriteSkin:
         if state == "sleep":
             self._draw_zzz(p, w, h, t)
 
-    def _draw_winged(self, p: QPainter, pm: QPixmap, w: int, body_h: float,
-                     body_top: float, t: float, amp: float, speed: float) -> None:
-        """把立绘切成竖条，两侧按正弦上下错位——翅膀就活了，身体中线不动。
+    def _draw_winged(self, p: QPainter, pm: QPixmap, w: int, h: int,
+                     body_h: float, body_top: float, t: float,
+                     amp: float, speed: float) -> None:
+        """翅膀轻扇：左右两半各做一次纵向剪切。
 
-        每条目标高度多给 2*|dy|，源矩形多给半像素，保证没有缝。
+        剪切满足 dy = slope * (x - w/2)，中线处恒为 0，两半在中线严丝合缝；
+        整体只做一次贴图，不会出现竖条接缝（28 条分块那版就栽在这里）。
         """
-        strips = 28
-        src_w = pm.width() / strips
-        for i in range(strips):
-            x0 = w * i / strips
-            x1 = w * (i + 1) / strips
-            k = abs((i + 0.5) / strips - 0.5) * 2.0     # 0=中线，1=最外侧
-            dy = math.sin(t * speed - k * 2.4) * amp * (k ** 1.7)
-            pad = abs(dy)
-            p.drawPixmap(
-                QRectF(x0, body_top + dy - pad, x1 - x0, body_h + pad * 2),
-                pm, QRectF(i * src_w, 0, src_w + 0.6, pm.height()),
-            )
+        slope = (amp * math.sin(t * speed)) / max(1.0, w / 2.0)
+        half = w / 2.0
+        for sign, x0 in ((-1.0, 0.0), (1.0, half)):
+            s = sign * slope
+            tr = QTransform()
+            tr.translate(0, -s * half)      # 让 x=w/2 处位移为 0
+            tr.shear(0.0, s)
+            p.save()
+            p.setClipRect(QRectF(x0, 0, half, h))
+            p.setTransform(tr, True)
+            p.drawPixmap(QRectF(0, body_top, w, body_h), pm, QRectF(pm.rect()))
+            p.restore()
 
     # ---------------- 情绪 ----------------
     # ---------------- 特效 ----------------
