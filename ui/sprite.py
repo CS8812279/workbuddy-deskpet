@@ -98,6 +98,7 @@ class SpriteSkin:
             self._draw_confetti(p, w, h, confetti)
         if state == "working":
             self._draw_sparks(p, w, h, t)
+            self._draw_thinking(p, w, h, t)
         if state == "sleep":
             self._draw_zzz(p, w, h, t)
 
@@ -144,6 +145,21 @@ class SpriteSkin:
             size = c.size * (h / 200.0)
             p.drawRoundedRect(QRectF(-size / 2, -size / 4, size, size / 2), 1, 1)
             p.restore()
+        p.restore()
+
+    def _draw_thinking(self, p: QPainter, w: int, h: int, t: float) -> None:
+        """头顶三个跳动的点：让“正在跑”一眼可见，静态截屏也能看出来。"""
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setPen(Qt.NoPen)
+        cy = h * 0.085
+        r = max(2.2, w * 0.028)
+        for i in range(3):
+            phase = (t * 2.2 - i * 0.28) % 1.0
+            lift = -math.sin(phase * math.pi * 2) * r * 1.2
+            alpha = 130 + int(110 * (0.5 + 0.5 * math.sin(phase * math.pi * 2)))
+            p.setBrush(QColor(150, 200, 255, min(255, alpha)))
+            p.drawEllipse(QPointF(w / 2 + (i - 1) * r * 3.0, cy + lift), r, r)
         p.restore()
 
     def _draw_sparks(self, p: QPainter, w: int, h: int, t: float) -> None:

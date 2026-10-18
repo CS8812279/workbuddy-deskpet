@@ -10,6 +10,8 @@ from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from core import config
+from core.log import log
+from core.log import exc as log_exc
 from core.store import Store
 from monitor.credits import WorkBuddyCredits
 from monitor.deepseek import DeepSeekMonitor
@@ -62,9 +64,10 @@ class Poller(QThread):
 
 
 class DeskPet(QObject):
-    def __init__(self, app: QApplication):
+    def __init__(self, app: QApplication, parent_pid: int = 0):
         super().__init__()
         self.app = app
+        self.parent_pid = parent_pid
         self.cfg = config.load()
         config.DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.store = Store(config.DATA_DIR / "ledger.json")
@@ -102,6 +105,7 @@ class DeskPet(QObject):
         self._cr_cache: dict = {}
         self._dsh_cache: dict = {}
         self._last_done = ("", 0.0)
+        self._last_tick_at = time.time()
         self._home_pos: QPoint | None = None
         self._alert_centered = False
         self._last_saved_pos = None
@@ -114,6 +118,12 @@ class DeskPet(QObject):
 
         self._build_tray()
         self.tray.show()
+
+        import os
+
+        log(f"=== 启动 pid={os.getpid()} ppid={os.getppid()} "
+            f"skin={'custom' if self.cfg['pet'].get('skin_file') else ('sprite' if self.skin else 'blob')} "
+            f"interval={self.cfg['monitor']['interval_ms']}ms ===")
 
         self.poller = Poller(self.wb, self.dsh, self.ds, self.credits,
                              self.cfg["monitor"]["interval_ms"])
@@ -193,6 +203,10 @@ class DeskPet(QObject):
         menu.addAction(self.act_boot)
 
         menu.addSeparator()
+        act_restart = QAction("重启桌宠", menu)
+        act_restart.triggered.connect(self._restart_pet)
+        menu.addAction(act_restart)
+
         act_settings = QAction("设置…", menu)
         act_settings.triggered.connect(self._open_settings)
         menu.addAction(act_settings)
@@ -262,6 +276,14 @@ class DeskPet(QObject):
 
     # ---------------- 采集回调 ----------------
     def _on_tick(self, payload: dict) -> None:
+        try:
+            self._tick(payload)
+        except Exception:
+            # 槽函数里抛异常会被 Qt 吞掉，桌宠就永远定在上一帧——必须落日志
+            log_exc("_on_tick 失败")
+
+    def _tick(self, payload: dict) -> None:
+        self._last_tick_at = time.time()
         wb = payload.get("wb") or {}
         dsh = payload.get("dsh") or {}
         self._ds_cache = payload.get("ds") or {}
@@ -271,10 +293,15 @@ class DeskPet(QObject):
         if wb.get("ok"):
             self._tasks = wb.get("tasks") or []
             self._handle_wb_events(wb.get("events") or [])
+        else:
+            log(f"wb 采集失败：{wb.get('error', '')[:120]}", "wb_err", 60)
+
         if dsh.get("ok"):
             self._handle_dsh_events(dsh.get("events") or [])
             for a in self.dsh.pending_alerts():
                 self._pending.setdefault(a["approval_id"], a)
+        else:
+            log(f"dsh 采集失败：{dsh.get('error', '')[:120]}", "dsh_err", 60)
 
         self._refresh_state()
         if self.panel.isVisible():
@@ -416,14 +443,24 @@ class DeskPet(QObject):
     # ---------------- 状态 ----------------
     def _refresh_state(self) -> None:
         if self.pet.state == ALERT:
+            # 没有待确认项还挂着 ALERT，超过 60 秒就放下来，别卡死
+            if not self._pending and time.time() - self.pet._alert_at > 60:
+                log("ALERT 超时自动复位")
+                self.pet.set_state(WORKING if self._running_count() else IDLE)
             return
         if self.pet.state == DONE and self.pet._t - self.pet._jump_t0 < 2.4:
             return
-        running = sum(1 for t in self._tasks if t.get("status") == "working")
+        running = self._running_count()
         if running:
+            if self.pet.state != WORKING:
+                log(f"状态 -> working（运行中 {running}）")
             self.pet.set_state(WORKING)
         elif self.pet.state == WORKING:
+            log("状态 -> idle")
             self.pet.set_state(IDLE)
+
+    def _running_count(self) -> int:
+        return sum(1 for t in self._tasks if t.get("status") == "working")
 
     def _pet_name(self) -> str:
         return (self.cfg["pet"].get("name") or "").strip() or "墨团"
@@ -494,8 +531,54 @@ class DeskPet(QObject):
 
     def _on_ui_tick(self) -> None:
         self._persist_pos()
+        self._check_poller_health()
         if self.panel.isVisible():
             self.panel.update_data(self._panel_data())
+
+    def _check_poller_health(self) -> None:
+        """采集线程静默超过 20 秒就重建——宁可多一次重启，也不要永远定在 idle。"""
+        if not self._last_tick_at:
+            return
+        gap = time.time() - self._last_tick_at
+        if gap < 20:
+            return
+        log(f"采集线程 {int(gap)} 秒无心跳，重建")
+        try:
+            self.poller.stop()
+            self.poller.wait(2000)
+        except Exception:
+            log_exc("停止旧采集线程失败")
+        try:
+            self.poller = Poller(self.wb, self.dsh, self.ds, self.credits,
+                                 self.cfg["monitor"]["interval_ms"])
+            self.poller.tick.connect(self._on_tick)
+            self.poller.start()
+        except Exception:
+            log_exc("重建采集线程失败")
+        self._last_tick_at = time.time()
+
+    # ---------------- 重启 ----------------
+    def _restart_pet(self) -> None:
+        """延迟 1.5 秒再拉起自己：先让当前进程释放单实例锁。"""
+        import json
+        import subprocess
+        import sys
+
+        args = [str(ROOT / "main.py")]
+        if self.parent_pid:
+            args += ["--parent-pid", str(self.parent_pid)]
+        code = (
+            "import subprocess,sys,time;time.sleep(1.5);"
+            f"subprocess.Popen({json.dumps([sys.executable] + args)},"
+            f"cwd={json.dumps(str(ROOT))},creationflags=0x00000008)"
+        )
+        try:
+            subprocess.Popen([sys.executable, "-c", code],
+                             creationflags=0x00000008, close_fds=True)
+        except Exception:
+            log_exc("重启失败")
+        log("收到重启请求")
+        self.quit()
 
     # ---------------- 退出 ----------------
     def quit(self) -> None:

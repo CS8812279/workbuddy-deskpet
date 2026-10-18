@@ -128,7 +128,7 @@ def run_demo() -> int:
 
     from app import DeskPet
 
-    pet = DeskPet(app)
+    pet = DeskPet(app, parent_pid)
 
     def fire() -> None:
         pet._notify_approval({
@@ -220,7 +220,7 @@ def main() -> int:
             except ValueError:
                 parent_pid = 0
 
-    pet = DeskPet(app)
+    pet = DeskPet(app, parent_pid)
     if parent_pid > 0:
         # 由 DSH 插件拉起时，宿主没了就自杀，避免残留进程
         from core.guard import watch
