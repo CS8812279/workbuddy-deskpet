@@ -1,6 +1,7 @@
 """应用编排：采集线程 → 状态机 → 桌宠/气泡/托盘/面板。"""
 from __future__ import annotations
 
+import random
 import threading
 import time
 from pathlib import Path
@@ -26,6 +27,15 @@ from ui.sprite import load_custom_skin, load_skin
 
 ROOT = Path(__file__).resolve().parent
 DEDUPE_WINDOW = 45.0  # 同一任务的重复完成提醒合并窗口（秒）
+
+# 摸摸时的随机台词
+PAT_LINES = {
+    "happy": ["嘿嘿…", "好舒服～", "再来一下嘛", "唔…喜欢"],
+    "shy": ["别、别摸了…", "脸要烧起来了", "诶…突然这样"],
+    "angry": ["别戳了！", "再点真要生气了", "哼——"],
+    "surprise": ["哇啊——", "放我下来！"],
+    "sad": ["呜…", "今天有点累"],
+}
 
 
 class Poller(QThread):
@@ -88,6 +98,9 @@ class DeskPet(QObject):
 
         self.pet = PetWindow(self.cfg["pet"]["scale"], self.skin)
         self.pet.clicked.connect(self._on_pet_clicked)
+        self.pet.double_clicked.connect(self._on_pet_double)
+        self.pet.drag_started.connect(self._on_drag_started)
+        self.pet.drag_finished.connect(self._on_drag_finished)
         self.pet.context_requested.connect(self._show_menu)
 
         self.bubble = Bubble()
@@ -106,6 +119,7 @@ class DeskPet(QObject):
         self._dsh_cache: dict = {}
         self._last_done = ("", 0.0)
         self._last_tick_at = time.time()
+        self._pat_times: list[float] = []
         self._home_pos: QPoint | None = None
         self._alert_centered = False
         self._last_saved_pos = None
@@ -280,6 +294,7 @@ class DeskPet(QObject):
 
     def _tick(self, payload: dict) -> None:
         self._last_tick_at = time.time()
+        self._pat_times: list[float] = []
         wb = payload.get("wb") or {}
         dsh = payload.get("dsh") or {}
         self._ds_cache = payload.get("ds") or {}
@@ -509,18 +524,43 @@ class DeskPet(QObject):
         self.panel.raise_()
 
     def _on_pet_clicked(self) -> None:
+        # 有待确认时，点一下就是"我看过了"
         if self._pending:
             n = len(self._pending)
             self._pending.clear()
             self.store.push_history("ack", f"已查看 {n} 条待确认")
             self.store.save()
             self._clear_alert()
+            self.pet.set_mood("happy", 1.8)
             return
+
+        now = time.time()
+        self._pat_times = [t for t in self._pat_times if now - t < 3.0]
+        self._pat_times.append(now)
+        if len(self._pat_times) >= 5:
+            self._pat_times.clear()
+            mood = "angry"
+        else:
+            mood = random.choice(("happy", "happy", "shy", "happy"))
+
+        self.pet.set_mood(mood, 2.6)
+        self.sound.play("click")
+        line = random.choice(PAT_LINES.get(mood, ["…"]))
+        self.bubble.show_text("", line, self.pet.geometry(), seconds=2.0)
+        log(f"摸摸 -> {mood}")
+
+    def _on_pet_double(self) -> None:
+        self.pet.set_mood(None)
         if self.panel.isVisible():
             self.panel.hide()
         else:
             self._open_panel()
-        self.sound.play("click")
+
+    def _on_drag_started(self) -> None:
+        self.pet.set_mood("surprise", 1.6)
+
+    def _on_drag_finished(self) -> None:
+        self.pet.set_mood(None)
 
     def _show_menu(self, global_pos: QPoint) -> None:
         self._menu.popup(global_pos)
@@ -552,6 +592,7 @@ class DeskPet(QObject):
         except Exception:
             log_exc("重建采集线程失败")
         self._last_tick_at = time.time()
+        self._pat_times: list[float] = []
 
     # ---------------- 换肤 ----------------
     def _switch_skin(self, skin_id: str) -> None:

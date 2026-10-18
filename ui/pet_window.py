@@ -17,6 +17,9 @@ IDLE, WORKING, DONE, ALERT, SLEEP = "idle", "working", "done", "alert", "sleep"
 
 class PetWindow(QWidget):
     clicked = Signal()
+    double_clicked = Signal()
+    drag_started = Signal()
+    drag_finished = Signal()
     context_requested = Signal(QPoint)
 
     def __init__(self, scale: float = 1.0, skin: SpriteSkin | None = None, parent=None):
@@ -38,6 +41,9 @@ class PetWindow(QWidget):
 
         self.state = IDLE
         self._t = 0.0
+        self.mood: str | None = None
+        self._mood_t0 = 0.0
+        self._mood_until = 0.0
         self._dt = 0.0
         self._timer = QTimer(self)
         self._timer.setInterval(16)
@@ -52,6 +58,7 @@ class PetWindow(QWidget):
         self._press_global = None
         self._press_win = None
         self._dragging = False
+        self._was_dragging = False
         self._mover = None
 
     # ---------------- 生命周期 ----------------
@@ -141,7 +148,24 @@ class PetWindow(QWidget):
             p, self.width(), self.height(), self.state, self._t,
             blink=blink, jump=jump * (self.height() / BASE),
             alert=alert, confetti=self._confetti,
+            mood=self.mood, mood_alpha=self.mood_alpha(),
         )
+
+    # ---------------- 情绪 ----------------
+    def set_mood(self, mood: str | None, seconds: float = 2.4) -> None:
+        self.mood = mood
+        self._mood_t0 = self._t
+        self._mood_until = self._t + seconds if mood else 0.0
+        self.update()
+
+    def mood_alpha(self) -> float:
+        if not self.mood:
+            return 0.0
+        if self._t >= self._mood_until:
+            return 0.0
+        fade_in = min(1.0, (self._t - self._mood_t0) / 0.18)
+        fade_out = min(1.0, (self._mood_until - self._t) / 0.35)
+        return max(0.0, min(fade_in, fade_out))
 
     # ---------------- 交互 ----------------
     def mousePressEvent(self, event) -> None:
@@ -161,7 +185,17 @@ class PetWindow(QWidget):
         if not self._dragging and (abs(delta.x()) > 3 or abs(delta.y()) > 3):
             self._dragging = True
         if self._dragging:
+            if not self._was_dragging:
+                self._was_dragging = True
+                self.drag_started.emit()
             self.move(self._press_win + delta)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if event.button() == Qt.LeftButton:
+            self.double_clicked.emit()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
         if event.button() != Qt.LeftButton:
@@ -170,8 +204,11 @@ class PetWindow(QWidget):
             self.clicked.emit()
         else:
             self.snap_to_edge()
+            if self._was_dragging:
+                self.drag_finished.emit()
         self._press_global = None
         self._dragging = False
+        self._was_dragging = False
 
     # ---------------- 运动 ----------------
     def animate_to(self, target: QPoint, ms: int = 420) -> None:

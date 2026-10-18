@@ -17,6 +17,7 @@ English | [简体中文](README.zh-CN.md)
 | **Info panel** | Left click: credits, balance, running tasks, DSH sessions, pending approvals, recent history |
 | **Five-state skin** | idle breathing + random blink, working hop, done jump with confetti, alert shake, sleepy |
 | **Multiple characters** | Right click → 角色 to switch; drop a folder under `assets/` to add your own |
+| **Interactions** | Click to pet it (random reaction + line), five clicks in a row makes it angry, double click for the panel, drag it and it struggles; while an approval is pending a click means "seen it" |
 | **Settings** | Right click → Settings: rename, import a PNG, custom WAV, toggle each alert channel, bubble duration |
 | **Plugin mode** | Ships as a DSH plugin: starts with the host, dies with the host |
 
@@ -168,9 +169,17 @@ To use your own art: right click → Settings → import a PNG (single image for
 Adding a new character (needs ComfyUI on `127.0.0.1:8188`):
 
 ```bat
+:: Qwen-Image-2.1 local edit — crop the head, describe the expression, feather it back
+python tools/qwen_faces.py --name moth-girl --image D:/art/base.png --crop 760,250,1140,590
+
+:: Krea 2 eye-band fallback
 python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
     --box 822,345,1064,426 --display "雪蛾" --feather 9
 ```
+
+`qwen_faces.py` is the recommended path: it only touches the cropped head and pastes it back
+with a feathered edge, so hair, fur and lighting outside the crop are pixel-identical.
+Krea 2 needs a much narrower mask and drifts the iris colour far more easily.
 
 `--box` is the **eye band** (x1,y1,x2,y2), not the whole face. Lessons learned the hard way:
 

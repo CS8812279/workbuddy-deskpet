@@ -10,7 +10,7 @@ import random
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 
 FRAMES = ("idle", "blink", "alert", "done", "sleep")
 MAX_H = 300          # scale=1.0 时角色本身的高度
@@ -44,7 +44,8 @@ class SpriteSkin:
     # ---------------- 绘制 ----------------
     def draw(self, p: QPainter, w: int, h: int, state: str, t: float, *,
              blink: float = 1.0, jump: float = 0.0, alert: float = 0.0,
-             confetti: list | None = None) -> None:
+             confetti: list | None = None,
+             mood: str | None = None, mood_alpha: float = 0.0) -> None:
         frame = "idle"
         if state == "done":
             frame = "done"
@@ -101,6 +102,81 @@ class SpriteSkin:
             self._draw_thinking(p, w, h, t)
         if state == "sleep":
             self._draw_zzz(p, w, h, t)
+        if mood and mood_alpha > 0.01:
+            self._draw_mood(p, w, h, mood, t, mood_alpha)
+
+    # ---------------- 情绪 ----------------
+    def _draw_mood(self, p: QPainter, w: int, h: int, mood: str, t: float,
+                   alpha: float) -> None:
+        """互动产生的情绪符号：画在角色周围，全部夹在窗口内。"""
+        p.save()
+        p.setRenderHint(QPainter.Antialiasing, True)
+        body_h = h / (1.0 + HEADROOM)
+        top = h - body_h
+        hx = w / 2
+        hy = top + body_h * 0.17
+        a = max(0, min(255, int(255 * alpha)))
+        unit = max(1.0, min(w, body_h) / 150.0)
+
+        if mood == "angry":
+            # 井字怒气符号
+            cx, cy = hx + w * 0.27, hy - body_h * 0.04
+            r = 7.0 * unit
+            p.setPen(QPen(QColor(238, 62, 56, a), max(2.0, 2.4 * unit),
+                          Qt.SolidLine, Qt.RoundCap))
+            p.drawLine(QPointF(cx - r, cy - r * 0.5), QPointF(cx - r * 0.4, cy - r))
+            p.drawLine(QPointF(cx + r, cy - r * 0.5), QPointF(cx + r * 0.4, cy - r))
+            p.drawLine(QPointF(cx - r, cy + r * 0.5), QPointF(cx - r * 0.4, cy + r))
+            p.drawLine(QPointF(cx + r, cy + r * 0.5), QPointF(cx + r * 0.4, cy + r))
+            p.setBrush(QColor(255, 96, 96, int(24 * alpha)))
+            p.setPen(Qt.NoPen)
+            p.drawEllipse(QPointF(hx, hy + body_h * 0.05), w * 0.17, body_h * 0.09)
+
+        elif mood == "shy":
+            p.setBrush(QColor(255, 128, 158, int(62 * alpha)))
+            p.setPen(Qt.NoPen)
+            for ox in (-0.105, 0.105):
+                p.drawEllipse(QPointF(hx + w * ox, hy + body_h * 0.10),
+                              w * 0.045, body_h * 0.016)
+            f = p.font()
+            f.setPointSizeF(max(9.0, 15.0 * unit))
+            p.setFont(f)
+            for i, (ox, oy) in enumerate(((-0.32, -0.10), (0.33, -0.16))):
+                yy = hy + body_h * oy - math.sin(t * 3.2 + i * 1.7) * 3
+                p.setPen(QColor(255, 128, 160, a))
+                p.drawText(QRectF(hx + w * ox - 14, yy - 14, 28, 28),
+                           Qt.AlignCenter, "♥")
+
+        elif mood == "sad":
+            # 泪滴挂在左眼下
+            p.setBrush(QColor(120, 190, 255, a))
+            p.setPen(Qt.NoPen)
+            drop = 10.0 * unit
+            x = hx - w * 0.14
+            y = hy + body_h * 0.10 + abs(math.sin(t * 2.0)) * 2
+            p.drawEllipse(QPointF(x, y), drop * 0.45, drop * 0.62)
+            p.drawEllipse(QPointF(x, y - drop * 0.42), drop * 0.22, drop * 0.30)
+
+        elif mood == "surprise":
+            f = p.font()
+            f.setPointSizeF(max(10.0, 17.0 * unit))
+            f.setBold(True)
+            p.setFont(f)
+            p.setPen(QColor(255, 214, 90, a))
+            for ox in (-0.26, 0.26):
+                p.drawText(QRectF(hx + w * ox - 14, hy - body_h * 0.20, 28, 30),
+                           Qt.AlignCenter, "!")
+
+        elif mood == "happy":
+            f = p.font()
+            f.setPointSizeF(max(9.0, 14.0 * unit))
+            p.setFont(f)
+            p.setPen(QColor(255, 216, 96, a))
+            for i, (ox, oy) in enumerate(((-0.30, -0.06), (0.31, -0.13))):
+                yy = hy + body_h * oy - math.sin(t * 2.6 + i * 2.0) * 2
+                p.drawText(QRectF(hx + w * ox - 14, yy - 14, 28, 28),
+                           Qt.AlignCenter, "★")
+        p.restore()
 
     # ---------------- 特效 ----------------
     def _draw_alert_rings(self, p: QPainter, w: int, h: int, t: float, k: float) -> None:
