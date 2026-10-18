@@ -73,6 +73,10 @@ class PetWindow(QWidget):
         if self._confetti:
             self._confetti = step_confetti(self._confetti, self._dt)
 
+        # 情绪到期必须自己收回，否则立绘会永远停在那一帧、连眨眼都没了
+        if self.mood and self._t >= self._mood_until:
+            self.mood = None
+
         if self.state == DONE and self._t - self._jump_t0 > 2.4:
             self.set_state(IDLE if not self._confetti else DONE)
 

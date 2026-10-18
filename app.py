@@ -120,6 +120,8 @@ class DeskPet(QObject):
         self._last_done = ("", 0.0)
         self._last_tick_at = time.time()
         self._pat_times: list[float] = []
+        self._last_line = ""
+        self._last_pat_at = 0.0
         self._home_pos: QPoint | None = None
         self._alert_centered = False
         self._last_saved_pos = None
@@ -294,7 +296,6 @@ class DeskPet(QObject):
 
     def _tick(self, payload: dict) -> None:
         self._last_tick_at = time.time()
-        self._pat_times: list[float] = []
         wb = payload.get("wb") or {}
         dsh = payload.get("dsh") or {}
         self._ds_cache = payload.get("ds") or {}
@@ -535,6 +536,9 @@ class DeskPet(QObject):
             return
 
         now = time.time()
+        if now - self._last_pat_at < 0.35:
+            return                      # 连点太快时丢弃，避免台词刷屏
+        self._last_pat_at = now
         self._pat_times = [t for t in self._pat_times if now - t < 3.0]
         self._pat_times.append(now)
         if len(self._pat_times) >= 5:
@@ -545,7 +549,10 @@ class DeskPet(QObject):
 
         self.pet.set_mood(mood, 2.6)
         self.sound.play("click")
-        line = random.choice(PAT_LINES.get(mood, ["…"]))
+        pool = PAT_LINES.get(mood, ["…"])
+        fresh = [l for l in pool if l != self._last_line] or pool
+        line = random.choice(fresh)
+        self._last_line = line
         self.bubble.show_text("", line, self.pet.geometry(), seconds=2.0)
         log(f"摸摸 -> {mood}")
 
@@ -592,7 +599,6 @@ class DeskPet(QObject):
         except Exception:
             log_exc("重建采集线程失败")
         self._last_tick_at = time.time()
-        self._pat_times: list[float] = []
 
     # ---------------- 换肤 ----------------
     def _switch_skin(self, skin_id: str) -> None:

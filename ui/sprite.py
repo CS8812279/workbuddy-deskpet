@@ -136,13 +136,14 @@ class SpriteSkin:
         """
         slope = (amp * math.sin(t * speed)) / max(1.0, w / 2.0)
         half = w / 2.0
-        for sign, x0 in ((-1.0, 0.0), (1.0, half)):
+        for sign, x0 in ((-1.0, 0.0), (1.0, half - 0.5)):
             s = sign * slope
             tr = QTransform()
             tr.translate(0, -s * half)      # 让 x=w/2 处位移为 0
             tr.shear(0.0, s)
             p.save()
-            p.setClipRect(QRectF(x0, 0, half, h))
+            # 多给 0.5px，让两半在中线重叠，避免抗锯齿各让半像素后露出黑缝
+            p.setClipRect(QRectF(x0, 0, half + 0.5, h))
             p.setTransform(tr, True)
             p.drawPixmap(QRectF(0, body_top, w, body_h), pm, QRectF(pm.rect()))
             p.restore()

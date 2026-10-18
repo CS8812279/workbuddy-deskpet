@@ -179,6 +179,9 @@ python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
     --box 822,345,1064,426 --display "雪蛾" --feather 9
 ```
 
+气泡背景是 Krea2 生成的白色毛绒面板（`tools/make_bubble_art.py` 出图 + birefnet 抠图），
+运行时用九宫格拉伸，换行变宽也不会糊。
+
 `qwen_faces.py` 是推荐路径：只改裁出来的头部再羽化贴回，裁切框外的发丝、绒毛、光照逐像素不变。
 Krea 2 必须用很窄的蒙版，而且更容易把纯黑复眼改成棕色虹膜。
 

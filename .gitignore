@@ -9,7 +9,7 @@ assets/custom/
 # ---- 开发过程中的截图 / 中间产物 ----
 assets/preview/
 assets/whale-ref/
-assets/whale-girl/_*.png
+assets/*/_*.png
 assets/whale-girl/whale-girl-*.png
 
 # ---- 插件安装时生成 ----
@@ -20,3 +20,10 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# ---- 凭据 / 密钥，绝不入库 ----
+.env
+.env.*
+*.key
+secrets*
+*_secret*

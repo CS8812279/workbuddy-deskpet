@@ -3,16 +3,31 @@ from __future__ import annotations
 
 import math
 
+from pathlib import Path
+
 from PySide6.QtCore import QPoint, QPropertyAnimation, QRect, QRectF, QTimer, Qt
-from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen,
-                           QTextDocument, QTextOption)
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPainter, QPixmap,
+                           QTextCharFormat, QTextCursor, QTextDocument, QTextOption)
 from PySide6.QtWidgets import QApplication, QWidget
 
-PAD_X = 14
-PAD_Y = 11
-TAIL = 11
-MAX_W = 300
-MIN_W = 158
+ASSETS = Path(__file__).resolve().parent.parent / "assets" / "bubble"
+PAD_X = 30          # 留出毛绒边框
+PAD_Y = 20
+TAIL = 0            # 毛绒面板没有尖角，气泡直接浮在头顶
+MAX_W = 320
+MIN_W = 172
+TEXT = "#3B3644"    # 白底上的深色字
+
+_FUZZ: QPixmap | None = None
+
+
+def _fuzz() -> QPixmap:
+    """毛绒底图（Krea2 生成，tools/make_bubble_art.py）。"""
+    global _FUZZ
+    if _FUZZ is None:
+        p = ASSETS / "fluff.png"
+        _FUZZ = QPixmap(str(p)) if p.exists() else QPixmap()
+    return _FUZZ
 
 
 class Bubble(QWidget):
@@ -58,6 +73,11 @@ class Bubble(QWidget):
 
         self._doc.setPlainText(text)
         self._doc.setDocumentMargin(0)
+        fmt = QTextCharFormat()
+        fmt.setForeground(QColor(TEXT))
+        cur = QTextCursor(self._doc)
+        cur.select(QTextCursor.Document)
+        cur.mergeCharFormat(fmt)
 
         # 先用最大宽度试排，取自然宽度后按最终宽度重排一次
         self._doc.setTextWidth(MAX_W - PAD_X * 2)
@@ -67,7 +87,7 @@ class Bubble(QWidget):
         self._doc.setTextWidth(inner)
         text_h = math.ceil(self._doc.size().height())
 
-        self.setFixedSize(width, int(text_h + title_h + PAD_Y * 2 + TAIL))
+        self.setFixedSize(width, int(text_h + title_h + PAD_Y * 2))
         self._place(anchor)
         self.setWindowOpacity(0.0)
         self.show()
@@ -111,40 +131,56 @@ class Bubble(QWidget):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
         p.fillRect(self.rect(), Qt.transparent)
 
-        body = QRectF(0, 0, self.width(), self.height() - TAIL)
-        path = QPainterPath()
-        path.addRoundedRect(body, 14, 14)
-        tail = QPainterPath()
-        cx = self.width() / 2
-        tail.moveTo(cx - 8, body.bottom() - 1)
-        tail.lineTo(cx, body.bottom() + TAIL - 1)
-        tail.lineTo(cx + 8, body.bottom() - 1)
-        tail.closeSubpath()
-        path = path.united(tail)
+        body = QRectF(0.8, 0.8, self.width() - 1.6, self.height() - 1.6)
+        radius = min(18.0, body.height() / 2.0)
 
+        # 1) 实底：保证文字有干净的背景
         p.setPen(Qt.NoPen)
-        p.setBrush(QColor(0, 0, 0, 70))
-        p.drawPath(path.translated(0, 3))
+        p.setBrush(QColor(252, 251, 252, 246))
+        p.drawRoundedRect(body, radius, radius)
 
-        p.setBrush(QColor(20, 26, 46, 244))
-        p.setPen(QPen(QColor(255, 255, 255, 30), 1.2))
-        p.drawPath(path)
+        # 2) 毛绒纹理：压低透明度叠在实底上，只当质感，不抢字
+        pm = _fuzz()
+        if not pm.isNull():
+            p.setOpacity(0.38)
+            self._draw_nine(p, pm, body)
+            p.setOpacity(1.0)
 
-        p.setPen(QPen(QColor(self._accent.red(), self._accent.green(),
-                             self._accent.blue(), 200), 2.2))
-        p.drawLine(QPoint(18, 1), QPoint(self.width() - 18, 1))
+        # 3) 边缘一圈淡描边，把面板和桌面分开
+        p.setBrush(Qt.NoBrush)
+        p.setPen(QColor(210, 206, 216, 170))
+        p.drawRoundedRect(body, radius, radius)
 
-        y = PAD_Y
+        y = PAD_Y - 4
         if self._title:
             p.setFont(self._title_font)
-            p.setPen(QPen(self._accent))
+            p.setPen(QColor(self._accent.darker(205)))
             fm = QFontMetrics(self._title_font)
             p.drawText(QRect(PAD_X, y, self.width() - PAD_X * 2, fm.height()),
                        Qt.AlignLeft | Qt.AlignVCenter, self._title)
             y += fm.height() + 2
 
         p.translate(PAD_X, y)
-        p.setPen(QPen(QColor("#E8EFFF")))
         self._doc.drawContents(p)
+
+    @staticmethod
+    def _draw_nine(p: QPainter, pm: QPixmap, rect: QRectF) -> None:
+        """九宫格：四角保留绒毛细节，边和中间拉伸；目标角固定 22px，不被源图尺寸带偏。"""
+        sw, sh = pm.width(), pm.height()
+        src = min(sw, sh) * 0.30
+        dst = min(22.0, rect.width() / 3.0, rect.height() / 3.0)
+        sx = (0.0, src, sw - src, float(sw))
+        sy = (0.0, src, sh - src, float(sh))
+        dx = (rect.left(), rect.left() + dst, rect.right() - dst, rect.right())
+        dy = (rect.top(), rect.top() + dst, rect.bottom() - dst, rect.bottom())
+        for i in range(3):
+            for j in range(3):
+                w = dx[i + 1] - dx[i]
+                h = dy[j + 1] - dy[j]
+                if w <= 0 or h <= 0:
+                    continue
+                p.drawPixmap(QRectF(dx[i], dy[j], w, h),
+                             pm, QRectF(sx[i], sy[j], sx[i + 1] - sx[i], sy[j + 1] - sy[j]))

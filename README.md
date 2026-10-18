@@ -179,6 +179,9 @@ python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
     --box 822,345,1064,426 --display "雪蛾" --feather 9
 ```
 
+The bubble background is a white fluffy panel generated with Krea2 (`tools/make_bubble_art.py`,
+then matted with birefnet) and stretched with 9-slice at runtime.
+
 `qwen_faces.py` is the recommended path: it only touches the cropped head and pastes it back
 with a feathered edge, so hair, fur and lighting outside the crop are pixel-identical.
 Krea 2 needs a much narrower mask and drifts the iris colour far more easily.
