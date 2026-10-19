@@ -183,6 +183,13 @@ python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
 整张铺进气泡，轮廓直接用它自己的毛边——不裁圆角、不描边、不切边框。
 为了文字可读，只在中部叠一层径向柔光，用 `CompositionMode_SourceAtop` 合成，光只会落在毛上，四角不会糊出白框。
 
+**装不上 / 启动后没弹出来？** 包管理器可能把插件挪进了 `node_modules/.ignored/`（它不是 npm 依赖时就容易被这样处理）。
+`tools/plugin_install.py` 现在会把插件登记成 profile 的 `link:` 依赖，重跑一次即可恢复：
+
+```bat
+python tools/plugin_install.py
+```
+
 **字体和台词都能改**：
 
 - 字体：右键 → 设置 → 气泡，选字体族和字号，保存即生效

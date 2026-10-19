@@ -101,6 +101,31 @@ def validate_js() -> bool:
     return True
 
 
+def register_dependency(pyw: str) -> bool:
+    """把插件登记为 profile 的 link 依赖，否则包管理器会把它挪进 .ignored。"""
+    pkg = PROFILE / "package.json"
+    if not pkg.exists():
+        return False
+    try:
+        data = json.loads(pkg.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    deps = data.setdefault("dependencies", {})
+    want = "link:" + str(PACKAGE).replace("\\", "/")
+    if deps.get(NAME) == want:
+        return False
+    shutil.copyfile(pkg, pkg.with_name(f"package.json.bak-deskpet-{time.strftime('%Y%m%d-%H%M%S')}"))
+    deps[NAME] = want
+    pkg.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (PACKAGE / "deskpet.json").write_text(
+        json.dumps({"dir": str(ROOT), "python": pyw,
+                    "installedAt": time.strftime("%Y-%m-%d %H:%M:%S")},
+                   ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return True
+
+
 def install() -> int:
     if not PROFILE.exists():
         print(f"找不到 profile：{PROFILE}")
@@ -126,6 +151,12 @@ def install() -> int:
                    ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+
+    print("[2.5/4] 登记为 profile 依赖（防止被包管理器挪走）")
+    if register_dependency(str(pyw)):
+        print(f"  ✓ package.json 增加 {NAME}: link:{PACKAGE}")
+    else:
+        print("  · 已登记，跳过")
 
     print("[3/4] 更新 profile 补丁层")
     text = PATCH.read_text(encoding="utf-8")

@@ -185,6 +185,14 @@ is the border — no rounded-rect crop, no stroke.
 For legibility a radial white wash is composited with `CompositionMode_SourceAtop`, so it only lands on
 the fur and never leaves a white rectangle around the corners.
 
+**Pet not showing up after a DSH start?** The package manager may have swept the plugin into
+`node_modules/.ignored/` (it does that to folders it does not consider a dependency).
+`tools/plugin_install.py` now registers the plugin as a `link:` dependency in the profile, so re-running it restores things:
+
+```bat
+python tools/plugin_install.py
+```
+
 **Font and lines are editable:**
 
 - Font: right click → Settings → 气泡, pick a family and size, saved to `config.json`
