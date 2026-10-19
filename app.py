@@ -492,6 +492,10 @@ class DeskPet(QObject):
         if ds.get("ok") and isinstance(ds.get("balance"), (int, float)):
             sym = "¥" if ds.get("currency") in (None, "", "CNY") else "$"
             parts.append(f"{sym}{ds['balance']:.2f}")
+        act = next((s.get("activity") for s in (self._dsh_cache.get("active") or [])
+                    if s.get("activity")), None)
+        if act:
+            parts.append(f"Harness {act.get('text', '')}")
         parts.append(f"运行中 {running}")
         if self._pending:
             parts.append(f"待确认 {len(self._pending)}")

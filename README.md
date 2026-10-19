@@ -17,6 +17,7 @@ English | [简体中文](README.zh-CN.md)
 | **Info panel** | Left click: credits, balance, running tasks, DSH sessions, pending approvals, recent history |
 | **Nine-frame skin** | idle breathing + random blink, working hop with fluttering wings, done jump, alert shake, sleepy, plus four reaction faces (happy / shy / angry / sad) |
 | **Multiple characters** | Right click → 角色 to switch; drop a folder under `assets/` to add your own |
+| **Live agent actions** | The panel header shows what Harness is doing right now (read/write file, run command, search, thinking); the tray tooltip mirrors it |
 | **Interactions** | Click to pet it (switches to a reaction face + a line), five clicks in a row makes it angry, double click for the panel, drag it and it looks startled; while an approval is pending a click means "seen it" |
 | **Settings** | Right click → Settings: rename, import a PNG, custom WAV, toggle each alert channel, bubble duration |
 | **Plugin mode** | Ships as a DSH plugin: starts with the host, dies with the host |

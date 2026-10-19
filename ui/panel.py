@@ -220,6 +220,12 @@ class Panel(QWidget):
         self.lbl_dsh.setText(f"DSH 会话  {len(dsh)}")
         if dsh:
             lines = []
+            act = (dsh[0] or {}).get("activity")
+            if act:
+                icon = "✎" if act.get("kind") == "tool" else "…"
+                lines.append(
+                    f"<span style='color:{ACCENT}'>{icon} {act.get('text','')[:24]}</span>"
+                )
             for s in dsh[:3]:
                 idle = float(s.get("idle_min", 999))
                 live = idle < 3

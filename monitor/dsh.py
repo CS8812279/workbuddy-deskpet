@@ -19,6 +19,49 @@ ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 MAX_FRAME = 256 * 1024 * 1024
 
 
+TOOL_LABEL = {
+    "write": "写文件", "edit": "改文件", "read": "读文件", "display_file": "看图片",
+    "bash": "跑命令", "shell": "跑命令", "grep": "搜内容", "glob": "找文件",
+    "web_search": "搜网页", "fetch": "读网页", "web_fetch": "读网页",
+    "task": "开子任务", "todo_write": "理待办", "apply_patch": "打补丁",
+}
+
+
+def _basename(path: str) -> str:
+    return path.replace("\\", "/").rstrip("/").split("/")[-1]
+
+
+def describe_call(name: str, args_json: str) -> str:
+    """把一次 tool/call 压成一句人话，例如「写文件 · 笔记.md」。"""
+    import json as _json
+
+    label = TOOL_LABEL.get(name, name)
+    try:
+        args = _json.loads(args_json or "{}")
+    except Exception:
+        args = {}
+    if not isinstance(args, dict):
+        args = {}
+
+    detail = ""
+    for key in ("file_path", "path", "filename", "target_file", "notebook_path"):
+        val = args.get(key)
+        if isinstance(val, str) and val.strip():
+            detail = _basename(val.strip())
+            break
+    if not detail:
+        cmd = args.get("command")
+        if isinstance(cmd, str) and cmd.strip():
+            detail = " ".join(cmd.strip().split())[:32]
+    if not detail:
+        for key in ("pattern", "query", "task", "description"):
+            val = args.get(key)
+            if isinstance(val, str) and val.strip():
+                detail = f"「{val.strip()[:18]}」"
+                break
+    return f"{label} · {detail}" if detail else label
+
+
 def _decompress(chunk: bytes) -> str | None:
     try:
         return zstandard.ZstdDecompressor().decompress(
@@ -212,12 +255,23 @@ class DshMonitor:
             if now - s["mtime"] <= 3 * 3600
         ]
         recent.sort(key=lambda s: s["mtime"], reverse=True)
+        def _act(s: dict) -> dict | None:
+            act = s.get("act")
+            if not act:
+                return None
+            age = now - float(act.get("ts") or 0)
+            if age > 180:            # 三分钟没动静就不算“正在做”
+                return None
+            return {"kind": act["kind"], "text": act.get("text", ""),
+                    "age": round(age)}
+
         out["active"] = [
             {
                 "sid": s["sid"],
                 "cwd": s["cwd"],
                 "title": s["title"] or "会话",
                 "idle_min": round((now - s["mtime"]) / 60, 1),
+                "activity": _act(s),
             }
             for s in recent[:5]
         ]
@@ -236,23 +290,24 @@ class DshMonitor:
 
         if typ == "turn/start":
             return {
-                "kind": "turn_start", "sid": state["sid"], "title": state["title"],
+                "kind": "turn_start", "sid": state["sid"], "title": state.get("title") or "会话",
                 "cwd": state["cwd"], "ts": ts, "source": "dsh",
             }
 
         if typ == "turn/end":
+            state["act"] = None
             reason = (data.get("reason") or {}).get("kind", "completed")
             if state.get("origin") == "subagent":
                 return None   # 子代理回合结束不打扰用户
             return {
-                "kind": "turn_end", "sid": state["sid"], "title": state["title"],
+                "kind": "turn_end", "sid": state["sid"], "title": state.get("title") or "会话",
                 "cwd": state["cwd"], "ts": ts, "source": "dsh",
                 "reason": reason,
             }
 
         if typ == "approval/asked":
             alert = {
-                "kind": "approval", "sid": state["sid"], "title": state["title"],
+                "kind": "approval", "sid": state["sid"], "title": state.get("title") or "会话",
                 "cwd": state["cwd"], "ts": ts, "source": "dsh",
                 "approval_id": str(data.get("id") or ""),
                 "tool": data.get("toolName") or "",
@@ -260,6 +315,20 @@ class DshMonitor:
             }
             self._pending[alert["approval_id"]] = alert
             return alert
+
+        if typ == "tool/call":
+            name = str(data.get("name") or "")
+            state["act"] = {
+                "kind": "tool",
+                "name": name,
+                "text": describe_call(name, data.get("arguments") or ""),
+                "ts": ts,
+            }
+            return None
+
+        if typ in ("assistant/message", "assistant/attempt", "step/start"):
+            state["act"] = {"kind": "thinking", "name": "", "text": "思考中", "ts": ts}
+            return None
 
         if typ == "approval/decided":
             aid = str(data.get("id") or "")
