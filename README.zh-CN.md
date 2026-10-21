@@ -184,8 +184,14 @@ python tools/make_skin.py --name moth-girl --image D:/art/base.png ^
 整张铺进气泡，轮廓直接用它自己的毛边——不裁圆角、不描边、不切边框。
 为了文字可读，只在中部叠一层径向柔光，用 `CompositionMode_SourceAtop` 合成，光只会落在毛上，四角不会糊出白框。
 
-**装不上 / 启动后没弹出来？** 包管理器可能把插件挪进了 `node_modules/.ignored/`（它不是 npm 依赖时就容易被这样处理）。
-`tools/plugin_install.py` 现在会把插件登记成 profile 的 `link:` 依赖，重跑一次即可恢复：
+**装不上 / 启动后没弹出来？** 分两种：
+
+1. 包被挪进 `node_modules/.ignored/`——它不是 npm 依赖时会被包管理器扫走。
+2. profile 的 `cordis.patch.yml` 被其它安装工具整体重写，手写的挂载块被冲掉（2026-10-21 发生过）。
+
+现在插件改成 **bundle 自带声明**：`plugin/cordis.patch.yml` 里写 insert，profile 只要在
+`dsh.profile.bundles` 里列出 `dsh-deskpet` 就生效，重启或重写 patch 都不会掉。
+修复一律重跑：
 
 ```bat
 python tools/plugin_install.py

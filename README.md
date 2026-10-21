@@ -186,9 +186,13 @@ is the border — no rounded-rect crop, no stroke.
 For legibility a radial white wash is composited with `CompositionMode_SourceAtop`, so it only lands on
 the fur and never leaves a white rectangle around the corners.
 
-**Pet not showing up after a DSH start?** The package manager may have swept the plugin into
-`node_modules/.ignored/` (it does that to folders it does not consider a dependency).
-`tools/plugin_install.py` now registers the plugin as a `link:` dependency in the profile, so re-running it restores things:
+**Pet not showing up after a DSH start?** Two ways it breaks:
+
+1. The package gets swept into `node_modules/.ignored/` (not an npm dependency).
+2. The profile's `cordis.patch.yml` gets rewritten by another installer and the hand-written mount block disappears (happened 2026-10-21).
+
+The plugin is now a **self-declaring bundle**: `plugin/cordis.patch.yml` holds the insert block, and the profile only
+needs `dsh-deskpet` listed in `dsh.profile.bundles` — a patch rewrite cannot remove it. Repair with:
 
 ```bat
 python tools/plugin_install.py

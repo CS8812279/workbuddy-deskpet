@@ -112,10 +112,14 @@ def register_dependency(pyw: str) -> bool:
         return False
     deps = data.setdefault("dependencies", {})
     want = "link:" + str(PACKAGE).replace("\\", "/")
-    if deps.get(NAME) == want:
+    bundles = data.setdefault("dsh", {}).setdefault("profile", {}).setdefault("bundles", [])
+    need_bundle = NAME not in bundles
+    if deps.get(NAME) == want and not need_bundle:
         return False
     shutil.copyfile(pkg, pkg.with_name(f"package.json.bak-deskpet-{time.strftime('%Y%m%d-%H%M%S')}"))
     deps[NAME] = want
+    if need_bundle:
+        bundles.append(NAME)          # 只有进了 bundles，bundle 自带的 patch 才会被加载
     pkg.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     (PACKAGE / "deskpet.json").write_text(
         json.dumps({"dir": str(ROOT), "python": pyw,
@@ -139,10 +143,14 @@ def install() -> int:
         print("找不到 pythonw.exe")
         return 1
 
-    print(f"[1/4] 复制插件 → {TARGET}")
-    if TARGET.exists():
+    print(f"[1/4] 就位插件 → {TARGET}")
+    if TARGET.is_symlink():
+        print(f"  · 已是指向 {os.readlink(TARGET)} 的链接，跳过复制")
+    elif TARGET.exists():
         shutil.rmtree(TARGET)
-    shutil.copytree(PACKAGE, TARGET)
+        shutil.copytree(PACKAGE, TARGET)
+    else:
+        shutil.copytree(PACKAGE, TARGET)
 
     print("[2/4] 写入 deskpet.json")
     (TARGET / "deskpet.json").write_text(
@@ -158,19 +166,20 @@ def install() -> int:
     else:
         print("  · 已登记，跳过")
 
-    print("[3/4] 更新 profile 补丁层")
+    print("[3/4] 清理 profile 补丁层（改由 bundle 自带声明）")
     text = PATCH.read_text(encoding="utf-8")
-    backup = PATCH.with_name(f"cordis.patch.yml.bak-deskpet-{time.strftime('%Y%m%d-%H%M%S')}")
-    if not backup.exists():
+    if BEGIN in text:
+        backup = PATCH.with_name(f"cordis.patch.yml.bak-deskpet-{time.strftime('%Y%m%d-%H%M%S')}")
         shutil.copyfile(PATCH, backup)
-        print(f"  · 已备份 {backup.name}")
-    cleaned = strip_block(text).rstrip("\n")
-    PATCH.write_text(cleaned + "\n" + BLOCK, encoding="utf-8")
-    if not validate_yaml(PATCH):
-        shutil.copyfile(backup, PATCH)
-        print("  ✗ 校验失败，已回滚补丁文件")
-        return 1
-    print("  ✓ YAML 合法")
+        cleaned = strip_block(text).rstrip("\n")
+        PATCH.write_text(cleaned + "\n", encoding="utf-8")
+        if not validate_yaml(PATCH):
+            shutil.copyfile(backup, PATCH)
+            print("  ✗ 校验失败，已回滚补丁文件")
+            return 1
+        print(f"  · 已移除旧补丁块（备份 {backup.name}）")
+    else:
+        print("  · 补丁层干净，无需处理")
 
     print("[4/4] 校验插件")
     if not validate_js():
@@ -188,7 +197,10 @@ def uninstall() -> int:
                          encoding="utf-8")
         validate_yaml(PATCH)
         print(f"已从补丁层移除 {NAME}（备份 {backup.name}）")
-    if TARGET.exists():
+    if TARGET.is_symlink():
+        TARGET.unlink()
+        print(f"已移除链接 {TARGET}")
+    elif TARGET.exists():
         shutil.rmtree(TARGET)
         print(f"已删除 {TARGET}")
     print("重启 DSH 后不再随宿主启动。")
