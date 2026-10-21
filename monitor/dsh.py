@@ -126,11 +126,87 @@ class DshMonitor:
             pass
         return info
 
+    def _full_title(self, path: Path, cap: int = 24 * 1024 * 1024) -> str:
+        """流式扫完整段，取最后一条 session/title。
+
+        大会话里改名可能发生在中段（16MB 的会话，改名在 44% 处），只扫尾巴会漏。
+        每个新会话只做一次，之后靠 _tail_titles 增量刷新。
+        """
+        title = ""
+        try:
+            if path.stat().st_size > cap:
+                return ""
+            with open(path, "rb") as fh:
+                reader = zstandard.ZstdDecompressor().stream_reader(fh)
+                buf = b""
+                while True:
+                    chunk = reader.read(512 * 1024)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    while b"\n" in buf:
+                        raw, buf = buf.split(b"\n", 1)
+                        if b"session/title" not in raw:
+                            continue
+                        try:
+                            obj = json.loads(raw.decode("utf-8", "replace"))
+                        except Exception:
+                            continue
+                        if obj.get("type") == "session/title":
+                            name = ((obj.get("data") or {}).get("title") or "").strip()
+                            if name:
+                                title = name
+        except Exception:
+            return title
+        return title
+
+    def _tail_titles(self, path: Path, window: int = 768 * 1024) -> str:
+        """只扫文件尾部，取最后一条 session/title。
+
+        用户改名会在流里追加一条 source=user 的 title 事件；如果只读文件头，
+        拿到的永远是第一次自动生成的名字，这就是"改了名还显示旧名"的原因。
+        """
+        try:
+            size = path.stat().st_size
+            start = max(0, size - window)
+            with open(path, "rb") as fh:
+                fh.seek(start)
+                buf = fh.read()
+        except OSError:
+            return ""
+        pos = buf.find(ZSTD_MAGIC)
+        if pos < 0:
+            return ""
+        title = ""
+        while pos < len(buf):
+            nxt = buf.find(ZSTD_MAGIC, pos + 4)
+            chunk = buf[pos:] if nxt < 0 else buf[pos:nxt]
+            text = _decompress(chunk)
+            if text is None:
+                break
+            for line in text.splitlines():
+                if "session/title" not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except Exception:
+                    continue
+                if obj.get("type") == "session/title":
+                    name = ((obj.get("data") or {}).get("title") or "").strip()
+                    if name:
+                        title = name
+            if nxt < 0:
+                break
+            pos = nxt
+        return title
+
     def _read_new(self, path: Path, offset: int) -> tuple[list[str], int]:
         try:
             size = path.stat().st_size
-            if size <= offset:
-                return [], size
+            if size < offset:          # 被重写/压缩过，退回开头重读
+                return [], 0
+            if size == offset:
+                return [], offset
             with open(path, "rb") as fh:
                 fh.seek(offset)
                 buf = fh.read()
@@ -191,7 +267,7 @@ class DshMonitor:
                         "offset": size,
                         "cwd": head.get("cwd", ""),
                         "sid": head.get("sid", path.parent.name),
-                        "title": head.get("title", ""),
+                        "title": self._full_title(path) or head.get("title", ""),
                         "origin": head.get("origin", ""),
                         "mtime": _mtime,
                     }
@@ -215,7 +291,7 @@ class DshMonitor:
                     "offset": st.st_size,      # 跳过历史，只跟新事件
                     "cwd": head.get("cwd", ""),
                     "sid": head.get("sid", path.parent.name),
-                    "title": head.get("title", ""),
+                    "title": self._full_title(path) or head.get("title", ""),
                     "origin": head.get("origin", ""),
                     "mtime": st.st_mtime,
                 }
@@ -223,6 +299,11 @@ class DshMonitor:
                 seen.add(key)
                 continue
             seen.add(key)
+            if (st.st_size != state["offset"] or st.st_mtime != state["mtime"]) and                     now - state.get("title_at", 0) > 8:
+                latest = self._tail_titles(path)
+                if latest and latest != state["title"]:
+                    state["title"] = latest
+                state["title_at"] = now
             if st.st_size == state["offset"]:
                 if now - state["mtime"] > 3 * 3600:
                     self._state.pop(key, None)   # 三小时没动静就不再跟
