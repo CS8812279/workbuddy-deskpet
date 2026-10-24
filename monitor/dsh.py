@@ -126,15 +126,22 @@ class DshMonitor:
             pass
         return info
 
-    def _full_title(self, path: Path, cap: int = 24 * 1024 * 1024) -> str:
+    def _full_title(self, path: Path, cap: int = 192 * 1024 * 1024,
+                    budget: float = 2.0) -> str:
         """流式扫完整段，取最后一条 session/title。
 
         大会话里改名可能发生在中段（16MB 的会话，改名在 44% 处），只扫尾巴会漏。
         每个新会话只做一次，之后靠 _tail_titles 增量刷新。
+
+        上限用「时间预算」而不是固定体积：会话能长到 30MB+，写死 24MB 的阈值
+        会让大会话直接退回第一条标题（2026-10-25 复现）。
         """
         title = ""
+        t0 = time.time()
+        self._last_full_complete = True
         try:
             if path.stat().st_size > cap:
+                self._last_full_complete = False
                 return ""
             with open(path, "rb") as fh:
                 reader = zstandard.ZstdDecompressor().stream_reader(fh)
@@ -142,6 +149,9 @@ class DshMonitor:
                 while True:
                     chunk = reader.read(512 * 1024)
                     if not chunk:
+                        break
+                    if time.time() - t0 > budget:
+                        self._last_full_complete = False
                         break
                     buf += chunk
                     while b"\n" in buf:
@@ -267,7 +277,8 @@ class DshMonitor:
                         "offset": size,
                         "cwd": head.get("cwd", ""),
                         "sid": head.get("sid", path.parent.name),
-                        "title": self._full_title(path) or head.get("title", ""),
+                        "title": (self._full_title(path) or self._tail_titles(path)
+                                  or head.get("title", "")),
                         "origin": head.get("origin", ""),
                         "mtime": _mtime,
                     }
@@ -291,7 +302,8 @@ class DshMonitor:
                     "offset": st.st_size,      # 跳过历史，只跟新事件
                     "cwd": head.get("cwd", ""),
                     "sid": head.get("sid", path.parent.name),
-                    "title": self._full_title(path) or head.get("title", ""),
+                    "title": (self._full_title(path) or self._tail_titles(path)
+                                  or head.get("title", "")),
                     "origin": head.get("origin", ""),
                     "mtime": st.st_mtime,
                 }
@@ -303,6 +315,13 @@ class DshMonitor:
                 latest = self._tail_titles(path)
                 if latest and latest != state["title"]:
                     state["title"] = latest
+                elif state.get("title_partial") and now - state.get("title_full_at", 0) > 120:
+                    # 上次全量扫描被截断（大会话），隔两分钟再补一次
+                    latest = self._full_title(path, budget=4.0)
+                    if latest:
+                        state["title"] = latest
+                        state["title_partial"] = not self._last_full_complete
+                    state["title_full_at"] = now
                 state["title_at"] = now
             if st.st_size == state["offset"]:
                 if now - state["mtime"] > 3 * 3600:
